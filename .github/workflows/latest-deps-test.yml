@@ -1,0 +1,53 @@
+# Re-resolves all dependencies to the latest versions allowed by pyproject.toml
+# and runs the Python test suite, mirroring what a fresh `uv tool install instro`
+# resolves. Catches allowed-range breaking changes in upstream dependencies that
+# the lockfile-pinned PR CI cannot see (see issue #357 / #352).
+#
+# Scheduled rather than PR-triggered on purpose: an upstream breakage is not the
+# fault of any open PR and should not turn unrelated PRs red.
+
+name: Test latest dependencies
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  latest-deps-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Bounds of supported Python only; the full matrix runs in PR CI.
+        python-version: ["3.10", "3.14"]
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: "0.8.x"
+          enable-cache: false
+          python-version: ${{ matrix.python-version }}
+      - name: Install just
+        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3.1.0
+      # `rustup` is available by default on GitHub runners
+      - name: Install Rust
+        run: rustup show
+      - name: Cache Rust build output
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Upgrade all dependencies to latest allowed versions
+        run: |
+          uv lock --upgrade
+          uv sync --all-extras
+      - name: Smoke test CLI import
+        run: uv run instro --version
+      - name: Run Python unit tests
+        run: just test-python
