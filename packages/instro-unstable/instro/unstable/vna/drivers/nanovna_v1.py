@@ -99,9 +99,20 @@ class NanoVNAv1(VNADriverBase):
         return np.array(complex_data)
 
 
-    @property
-    def frequency(self):
+    
+    def get_frequency(self, cnum = None):
         return skrf.Frequency.from_f(self.get_f(), unit='hz')
+
+    def set_frequency(self, freq, cnum = None):
+        raise NotImplementedError()
+
+    def get_sparam(self, m, n, cnum = None):
+        if (m,n)==(0,0):
+            self.get_channel_data(array_index=0)
+        elif (m,n) ==(1,0):
+            self.get_channel_data(array_index=10)
+        else:
+            raise ValueError('unsupported s-parameter index: S{m}{n}')
 
     def get_snp_network(
             self,  
@@ -110,13 +121,13 @@ class NanoVNAv1(VNADriverBase):
             **kw
             ) -> skrf.Network:
         
-        frequency = self.frequency
+        frequency = self.get_frequency()
         frequency.unit = 'ghz'
 
-        if ports is [0]:
+        if ports == [0]:
             s = self.get_channel_data(array_index=0)
 
-        elif ports is [0,1]:
+        elif ports == [0,1] or ports ==None:
             s11 = self.get_channel_data(array_index=0)
             s21 = self.get_channel_data(array_index=1)
             s = np.zeros((len(s11), 2, 2), dtype=complex)

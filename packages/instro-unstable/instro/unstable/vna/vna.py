@@ -5,7 +5,7 @@ from instro.lib import InstroError, Instrument
 from instro.lib.publishers import Publisher
 from instro.lib.types import Command
 
-
+import numpy as np
 try: 
     import skrf 
 except ImportError:
@@ -19,12 +19,22 @@ logger = logging.getLogger(__name__)
 class VNADriverBase(abc.ABC):
     """Base class for VNA drivers."""
 
+    @abc.abstractmethod
+    def get_sparam(
+        self, 
+        m:int, 
+        n:int, 
+        cnum: int|None = None,
+         ) -> np.array:
+        """
+        Get a single S-parameter"""
+        ...
 
     @abc.abstractmethod
     def get_snp_network(
             self,
-            cnum: int|None = None,
             ports: Sequence | None = None,
+            cnum: int|None = None,
             **kw,
         ) -> skrf.Network:
         """Get the S-parameter network from the VNA in form of a skrf.Network object.
@@ -33,12 +43,23 @@ class VNADriverBase(abc.ABC):
         """
         ...
 
-    @property
     @abc.abstractmethod
-    def frequency(self) -> skrf.Frequency:
+    def get_frequency(
+        self,
+        cnum: int|None = None
+        ) -> skrf.Frequency:
         """Get the frequency of the VNA."""
         ...
+    @abc.abstractmethod
+    def set_frequency(
+        self,
+        freq: skrf.Frequency,
+        cnum: int|None = None,
 
+        ) :
+        """Set the frequency of the VNA."""
+        ...
+    
 
 class InstroVNA(Instrument):
     def __init__(
@@ -87,17 +108,30 @@ class InstroVNA(Instrument):
         """
         return self._driver.get_snp_network(cnum=cnum, ports=ports,**kw)
 
-    def get_s11( self, **kw):
-        self.get_snp_network(ports=[0], **kw)
+    @property 
+    def s11( self, **kw):
+        return self.get_snp_network(ports=[0], **kw)
 
-    def get_s22( self, **kw):
-        self.get_snp_network(ports=[1], **kw)
+    @property 
+    def s22( self, **kw):
+        return self.get_snp_network(ports=[1], **kw)
 
     def get_twoport(self, **kw):
-        self.get_snp_network(ports=[0, 1], **kw)
+        return self.get_snp_network(ports=[0, 1], **kw)
 
     @property
-    def frequency(self) -> skrf.Frequency:
+    def get_frequency(self,cnum: int|None = None) -> skrf.Frequency:
         """Get the frequency of the VNA."""
-        return self._driver.frequency
+        return self._driver.get_frequency(cnum=cnum)
+
+    @property
+    def frequency(self):
+        return self._driver.get_frequency()
+
+    @frequency.setter
+    def frequency(self,freq):
+        return self._driver.set_frequency(freq)
+
+    
+
     
