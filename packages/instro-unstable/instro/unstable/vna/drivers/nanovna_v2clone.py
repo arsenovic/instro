@@ -5,13 +5,14 @@ from collections.abc import Sequence
 import skrf as skrf
 from instro.unstable.vna.vna import VNADriverBase
 
-class NanoVNAv1(VNADriverBase):
+class NanoVNAv2Clone(VNADriverBase):
     def __init__(self, port='/dev/ttyACM0', baudrate=9600, timeout=3.0):
         """Initializes serial connection to the text-based NanoVNA firmware."""
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
         self.ser = None
+        self._nports =2
         self.open()
 
     def open(self):
@@ -57,6 +58,15 @@ class NanoVNAv1(VNADriverBase):
                 lines.append(line)
         return lines
 
+    def get_freq_start(self, ch: int|None = None) -> float:
+        return self.get_f()[0]
+
+    def get_freq_stop(self, ch: int|None = None) -> float:
+        return self.get_f()[-1]
+
+    def get_freq_npoints(self, ch: int|None = None) -> int:
+        return len(self.get_f())
+
     def get_f(self):
         """Queries the device for the active sweep frequencies."""
         self.ser.reset_input_buffer()
@@ -75,7 +85,10 @@ class NanoVNAv1(VNADriverBase):
                 continue
                 
         return np.array(freqs)
-
+    def get_nports(self, ch: int|None = None) -> int:
+        """Get the number of ports of the VNA."""
+        return self._nports  # NanoVNA v1 has 2 ports
+    
     def get_channel_data(self, array_index=0):
         """Fetches raw S-parameter values (array 0 = S11, array 1 = S21)."""
         self.ser.reset_input_buffer()
@@ -100,24 +113,26 @@ class NanoVNAv1(VNADriverBase):
 
 
     
-    def get_frequency(self, cnum = None):
-        return skrf.Frequency.from_f(self.get_f(), unit='hz')
+    def get_frequency(self, ch = None):
+        frequency = skrf.Frequency.from_f(self.get_f(), unit='hz')
+        frequency.unit = 'ghz'
+        return frequency
 
-    def set_frequency(self, freq, cnum = None):
+    def set_frequency(self, freq, ch = None):
         raise NotImplementedError()
 
-    def get_sparam(self, m, n, cnum = None):
+    def get_smat(self, m, n, ch = None):
         if (m,n)==(0,0):
-            self.get_channel_data(array_index=0)
+            return self.get_channel_data(array_index=0)
         elif (m,n) ==(1,0):
-            self.get_channel_data(array_index=10)
+            return self.get_channel_data(array_index=1)
         else:
             raise ValueError('unsupported s-parameter index: S{m}{n}')
 
-    def get_snp_network(
+    def get_network(
             self,  
-            ports: Sequence[int | None], 
-            cnum: int | None = None,
+            ports: Sequence[int] | None=None, 
+            ch: int | None = None,
             **kw
             ) -> skrf.Network:
         
@@ -127,7 +142,7 @@ class NanoVNAv1(VNADriverBase):
         if ports == [0]:
             s = self.get_channel_data(array_index=0)
 
-        elif ports == [0,1] or ports ==None:
+        elif ports == [0,1] or ports == None:
             s11 = self.get_channel_data(array_index=0)
             s21 = self.get_channel_data(array_index=1)
             s = np.zeros((len(s11), 2, 2), dtype=complex)
