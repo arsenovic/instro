@@ -59,10 +59,10 @@ class NanoVNAv2Clone(VNADriverBase):
         return lines
 
     def get_freq_start(self, ch: int|None = None) -> float:
-        return self.get_f()[0]
+        return float(self.get_f()[0]  )
 
     def get_freq_stop(self, ch: int|None = None) -> float:
-        return self.get_f()[-1]
+        return float(self.get_f()[-1])
 
     def get_freq_npoints(self, ch: int|None = None) -> int:
         return len(self.get_f())
@@ -113,10 +113,10 @@ class NanoVNAv2Clone(VNADriverBase):
 
 
     
-    def get_frequency(self, ch = None):
-        frequency = skrf.Frequency.from_f(self.get_f(), unit='hz')
-        frequency.unit = 'ghz'
-        return frequency
+    #def get_frequency(self, ch = None):
+    #    frequency = skrf.Frequency.from_f(self.get_f(), unit='hz')
+    #    frequency.unit = 'ghz'
+    #    return frequency
 
     def set_frequency(self, freq, ch = None):
         raise NotImplementedError()

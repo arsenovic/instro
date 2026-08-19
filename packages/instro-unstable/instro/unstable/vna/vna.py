@@ -3,9 +3,9 @@ import abc
 import logging
 import time
 import threading
-from typing import Any, Callable
+from typing import Any, Callable, get_type_hints
 from collections.abc import Sequence
-
+from numbers import Number
 
 import numpy as np
 import skrf 
@@ -13,12 +13,16 @@ from functools import wraps
 
 from instro.lib import InstroError, Instrument
 from instro.lib.publishers import Publisher
-from instro.lib.types import Command
+from instro.lib.types import Command, Measurement
 from instro.lib.instrument import publish_command, publish_measurement
 
 
 logger = logging.getLogger(__name__)
 
+
+def returns_numeric(func):
+    t = get_type_hints(func).get('return', None)
+    return isinstance(t, type) and issubclass(t,  Number)
 
 class VNADriverBase(abc.ABC):
     """Base class for VNA drivers."""
@@ -93,6 +97,7 @@ class VNADriverBase(abc.ABC):
         """
         ...
 
+    
     def get_frequency(
         self,
         ch: int|None = None,
@@ -103,7 +108,8 @@ class VNADriverBase(abc.ABC):
             start=self.get_freq_start(ch=ch), 
             stop=self.get_freq_stop(ch=ch), 
             npoints=self.get_freq_npoints(ch=ch),
-            unit=unit)
+            )
+        frequency.unit = unit
         return frequency
     
     def set_frequency(
@@ -185,10 +191,33 @@ class InstroVNA(Instrument):
         publishers: list[Publisher] | None = None,
         **kwargs,
     ):
+
          
         super().__init__(name, publishers=publishers, **kwargs)
         self._driver = driver
         self._resource_lock = threading.Lock()
+
+    @publish_measurement
+    def _execute_measurement(
+        self,
+        driver_method: Callable,
+        driver_kwargs: dict[str, Any] | None = None,
+        channel: int = 1,
+        *args,
+        **kwargs,
+    ) -> Measurement | None:
+        """Execute a driver measurement method and return a Measurement for the read value."""
+        name = driver_method.__name__
+        channel = name.split("_")[1] #get_freq_start  # freq is the channel
+        # could do something with kwargs to assembly channel name better
+        with self._resource_lock:
+            data = driver_method(**(driver_kwargs or {}))
+            timestamp = time.time_ns()
+
+        channel = f"ch{driver_method.__name__}"
+         
+        return self._package_measurement(channel=channel, data=data, timestamp=timestamp, **kwargs)
+        
 
     @publish_command
     def _execute_command(
@@ -204,10 +233,9 @@ class InstroVNA(Instrument):
             timestamp = time.time_ns()
 
   
-        descriptor = f"ch{channel}{driver_method.__name__}.cmd"
-        return self._package_command(descriptor, value, timestamp, **kwargs)
+        channel = f"ch{driver_method.__name__}.cmd"
+        return self._package_command(channel=channel, data=value, timestamp=timestamp, **kwargs)
 
-    #WHY: do we have this as a property ?
     @property
     def driver(self) -> VNADriverBase:
         """The underlying vendor driver """
@@ -220,27 +248,24 @@ class InstroVNA(Instrument):
         acquires the InstroVNA resource lock before calling the driver
         method. Non-callable attributes are returned directly.
         """
-        driver = object.__getattribute__(self, "_driver")
+        driver = self._driver
         if hasattr(driver, name):
             attr = getattr(driver, name)
             if callable(attr):
-                @wraps(attr)
-                def _wrapped(*args, **kwargs):
-                    with object.__getattribute__(self, "_resource_lock"):
-                        return attr(*args, **kwargs)
+                if name.startswith("get_") and returns_numeric(attr):
+                    @wraps(attr)
+                    def _wrapped( **kwargs):
+                        return self._execute_measurement(driver_method=attr, driver_kwargs=kwargs)
+                
+                else:
+                    _wrapped = attr
+
+               
+
                 return _wrapped
             return attr
         raise AttributeError(f"{type(self).__name__} object has no attribute {name}")
 
-    def __dir__(self):
-        base_dir = set(super().__dir__())
-        try:
-            driver_attrs = {a for a in dir(self._driver) if not a.startswith("_")}
-        except Exception:
-            driver_attrs = set()
-        return sorted(base_dir | driver_attrs)
 
-    
-    
 
     
