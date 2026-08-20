@@ -85,6 +85,7 @@ class NanoVNAv2Clone(VNADriverBase):
                 continue
                 
         return np.array(freqs)
+
     def get_nports(self, ch: int|None = None) -> int:
         """Get the number of ports of the VNA."""
         return self._nports  # NanoVNA v1 has 2 ports
@@ -127,9 +128,11 @@ class NanoVNAv2Clone(VNADriverBase):
         elif (m,n) ==(1,0):
             return self.get_channel_data(array_index=1)
         else:
-            raise ValueError('unsupported s-parameter index: S{m}{n}')
+            #TODO: add a warning? 
+            return np.zeros(self.get_freq_npoints())
+            
 
-    def get_network(
+    def get_network2(
             self,  
             ports: Sequence[int] | None=None, 
             ch: int | None = None,

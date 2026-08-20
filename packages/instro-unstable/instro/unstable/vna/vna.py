@@ -1,6 +1,8 @@
 
 import abc
+from enum import Enum
 import logging
+import tempfile
 import time
 import threading
 from typing import Any, Callable, get_type_hints
@@ -16,6 +18,7 @@ from instro.lib.publishers import Publisher
 from instro.lib.types import Command, Measurement
 from instro.lib.instrument import publish_command, publish_measurement
 
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +154,7 @@ class VNADriverBase(abc.ABC):
         s = np.zeros((len(frequency.f), len(ports), len(ports)), dtype=complex)
         for i, m in enumerate(ports):
             for j, n in enumerate(ports):
-                s[i, j] = self.get_s(m, n, ch=ch)
+                s[:,i, j] = self.get_smat(m, n, ch=ch)
         network = skrf.Network(frequency=frequency , s=s,**kw )    
         return network
 
@@ -181,7 +184,37 @@ class VNADriverBase(abc.ABC):
     @property 
     def s12( self):
         return self.get_s(m=0, n=1) 
-  
+
+
+
+
+
+class Storage(abc.ABC):
+    """Base class for data storage."""
+    @abc.abstractmethod
+    def get_path_for_filename(self, filename: str) -> Path:
+        """Get the path to the file for the specified name."""
+        ...
+
+class DiskStorage(Storage):
+    '''Class to handle disk storage of  data.'''
+    def __init__(
+        self, 
+        path: str | None = None, 
+    ):
+        if path is not None:
+            self.storage_path = Path(path)
+            self.storage_path.mkdir(parents=True, exist_ok=True)
+        else:
+            #get a temp dir 
+            self.storage_path = Path(tempfile.mkdtemp())
+        self.storage_format = format
+
+    def get_path_for_filename(self, filename: str|Path) -> Path:
+        """Get the path to the file for the specified name."""
+        return self.storage_path / Path(filename)
+    
+
 class InstroVNA(Instrument):
     
     def __init__(
@@ -189,6 +222,7 @@ class InstroVNA(Instrument):
         name: str,
         driver: VNADriverBase,
         publishers: list[Publisher] | None = None,
+        storage: Storage  = DiskStorage(), 
         **kwargs,
     ):
 
@@ -196,7 +230,9 @@ class InstroVNA(Instrument):
         super().__init__(name, publishers=publishers, **kwargs)
         self._driver = driver
         self._resource_lock = threading.Lock()
+        self._storage = storage
 
+    # this is general and should be inherited
     @publish_measurement
     def _execute_measurement(
         self,
@@ -231,7 +267,6 @@ class InstroVNA(Instrument):
         with self._resource_lock:
             driver_method(value, channel=channel)
             timestamp = time.time_ns()
-
   
         channel = f"ch{driver_method.__name__}.cmd"
         return self._package_command(channel=channel, data=value, timestamp=timestamp, **kwargs)
@@ -256,16 +291,38 @@ class InstroVNA(Instrument):
                     @wraps(attr)
                     def _wrapped( **kwargs):
                         return self._execute_measurement(driver_method=attr, driver_kwargs=kwargs)
-                
+                elif name.startswith("set_"): #TODO: and set args_are_numeric(attr):
+                    _wrapped = attr #TODO: wrap set_ methods to execute   commands
                 else:
                     _wrapped = attr
-
-               
-
                 return _wrapped
             return attr
         raise AttributeError(f"{type(self).__name__} object has no attribute {name}")
 
+ 
+    def save_network(
+        self, 
+        name: str | None = None,
+        ports: Sequence[int] | None = None, 
+        ch: int | None = None, 
+
+        **kw) -> skrf.Network:
+        """get and save a network to self._storage and return a Measurement with the path to the saved file."""
+
+        with self._resource_lock:
+            timestamp = time.time_ns()
+            network = self._driver.get_network(ports=ports, ch=ch, **kw)
+        if name is None:
+            name = f"{self.name}_network_{timestamp}"
+        path = self._storage.get_path_for_filename(f"{name}.s{network.nports}p")
+        network.write_touchstone(path)   
+        
+
+        return Measurement(
+            channel_data={f"{self.name}.save_network": str(path)},
+            timestamps=[timestamp],
+            tags={**self.default_tags},)
+ 
 
 
     
