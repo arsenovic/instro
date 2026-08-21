@@ -16,6 +16,8 @@ from instro.unstable.awg.types import (
     Sine,
     Square,
     StaticValue,
+    SweepTriggerSource,
+    SweepType,
     Triangle,
     Waveform,
 )
@@ -41,6 +43,20 @@ _BURST_MODES: dict[BurstType, str] = {
     BurstType.INFINITE: "INF",
 }
 _BURST_TYPES: dict[str, BurstType] = {mode: burst_type for burst_type, mode in _BURST_MODES.items()}
+
+# :SWE:SPAC? always echoes the instrument's own abbreviated mnemonic, never the full keyword written.
+_SWEEP_SPACING_READBACK: dict[str, SweepType] = {
+    "LIN": SweepType.LINEAR,
+    "LOG": SweepType.LOG,
+    "STE": SweepType.STEP,
+}
+
+# :FUNC? mnemonic -> user-facing waveform name, for carriers the DG1022Z cannot sweep.
+_INVALID_SWEEPS: dict[str, str] = {
+    "DC": StaticValue.__name__,
+    "NOIS": "Noise",
+    "PULS": Pulse.__name__,
+}
 
 
 class RigolDG1022Z(AWGDriverBase):
@@ -386,6 +402,135 @@ class RigolDG1022Z(AWGDriverBase):
             result = float(self._visa.query(f":SOUR{channel}:BURS:INT:PER?"))
             self._check_errors()
         return result
+
+    def set_sweep(self, channel: int, sweep_type: SweepType) -> None:
+        _check_channel(channel)
+        if not isinstance(sweep_type, SweepType):
+            raise TypeError(f"sweep_type must be a SweepType, got {type(sweep_type).__name__}")
+        with self._visa.lock():
+            carrier = self._visa.query(f":SOUR{channel}:FUNC?").strip()
+            self._check_errors()
+            invalid_name = _INVALID_SWEEPS.get(carrier)
+            if invalid_name is not None:
+                raise ValueError(f"the DG1022Z cannot sweep a {invalid_name} on channel {channel}")
+            self._visa.write(f":SOUR{channel}:SWE:SPAC {sweep_type.value}")
+            self._check_errors()
+
+    def get_sweep_type(self, channel: int) -> SweepType:
+        _check_channel(channel)
+        with self._visa.lock():
+            resp = self._visa.query(f":SOUR{channel}:SWE:SPAC?").strip()
+            self._check_errors()
+        result = _SWEEP_SPACING_READBACK.get(resp)
+        if result is None:
+            raise ValueError(f"Rigol DG1022Z reported unsupported sweep type '{resp}'")
+        return result
+
+    def sweep_enable(self, channel: int, enable: bool) -> None:
+        _check_channel(channel)
+        self._write_checked(f":SOUR{channel}:SWE:STAT {'ON' if enable else 'OFF'}")
+
+    def get_sweep_state(self, channel: int) -> bool:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = self._visa.query(f":SOUR{channel}:SWE:STAT?").strip() == "ON"
+            self._check_errors()
+        return result
+
+    def set_sweep_trigger(self, channel: int, source: SweepTriggerSource) -> None:
+        _check_channel(channel)
+        if not isinstance(source, SweepTriggerSource):
+            raise TypeError(f"source must be a SweepTriggerSource, got {type(source).__name__}")
+        self._write_checked(f":SOUR{channel}:SWE:TRIG:SOUR {source.value}")
+
+    def get_sweep_trigger(self, channel: int) -> SweepTriggerSource:
+        _check_channel(channel)
+        with self._visa.lock():
+            resp = self._visa.query(f":SOUR{channel}:SWE:TRIG:SOUR?").strip()
+            self._check_errors()
+        return SweepTriggerSource(resp)
+
+    def set_sweep_start_freq(self, channel: int, frequency_hz: float) -> None:
+        _check_channel(channel)
+        self._write_checked(f":SOUR{channel}:FREQ:STAR {frequency_hz}")
+
+    def get_sweep_start_freq(self, channel: int) -> float:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = float(self._visa.query(f":SOUR{channel}:FREQ:STAR?"))
+            self._check_errors()
+        return result
+
+    def set_sweep_end_freq(self, channel: int, frequency_hz: float) -> None:
+        _check_channel(channel)
+        self._write_checked(f":SOUR{channel}:FREQ:STOP {frequency_hz}")
+
+    def get_sweep_end_freq(self, channel: int) -> float:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = float(self._visa.query(f":SOUR{channel}:FREQ:STOP?"))
+            self._check_errors()
+        return result
+
+    def set_sweep_time(self, channel: int, sweep_time: float) -> None:
+        _check_channel(channel)
+        self._write_checked(f":SOUR{channel}:SWE:TIME {sweep_time}")
+
+    def get_sweep_time(self, channel: int) -> float:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = float(self._visa.query(f":SOUR{channel}:SWE:TIME?"))
+            self._check_errors()
+        return result
+
+    def set_sweep_stop_hold_time(self, channel: int, hold_time: float) -> None:
+        _check_channel(channel)
+        self._write_checked(f":SOUR{channel}:SWE:HTIM {hold_time}")
+
+    def get_sweep_stop_hold_time(self, channel: int) -> float:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = float(self._visa.query(f":SOUR{channel}:SWE:HTIM?"))
+            self._check_errors()
+        return result
+
+    def set_sweep_start_hold_time(self, channel: int, hold_time: float) -> None:
+        _check_channel(channel)
+        self._write_checked(f":SOUR{channel}:SWE:HTIM:STAR {hold_time}")
+
+    def get_sweep_start_hold_time(self, channel: int) -> float:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = float(self._visa.query(f":SOUR{channel}:SWE:HTIM:STAR?"))
+            self._check_errors()
+        return result
+
+    def set_sweep_return_time(self, channel: int, return_time: float) -> None:
+        _check_channel(channel)
+        self._write_checked(f":SOUR{channel}:SWE:RTIM {return_time}")
+
+    def get_sweep_return_time(self, channel: int) -> float:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = float(self._visa.query(f":SOUR{channel}:SWE:RTIM?"))
+            self._check_errors()
+        return result
+
+    def fire_sweep_trigger(self, channel: int) -> None:
+        _check_channel(channel)
+        with self._visa.lock():
+            if not self.get_sweep_state(channel):
+                raise ValueError(
+                    f"Cannot fire a sweep trigger on channel {channel} unless sweep mode is already"
+                    " enabled, call sweep_enable(channel, True) first"
+                )
+            source = self.get_sweep_trigger(channel)
+            if source is not SweepTriggerSource.MANUAL:
+                raise ValueError(
+                    f"Cannot fire a sweep trigger on channel {channel} unless the trigger source is"
+                    f" already MANUAL, call set_sweep_trigger(channel, SweepTriggerSource.MANUAL) first. Got: {source.name}"
+                )
+            self._write_checked(f":SOUR{channel}:SWE:TRIG")
 
     def _write_frequency_and_phase(self, channel: int, frequency_hz: float, phase_deg: float) -> None:
         self._visa.write(f":SOUR{channel}:FREQ {frequency_hz}")
