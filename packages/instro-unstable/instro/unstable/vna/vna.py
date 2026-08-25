@@ -1,8 +1,6 @@
 
 import abc
-from enum import Enum
 import logging
-import tempfile
 import time
 import threading
 from typing import Any, Callable, get_type_hints
@@ -17,20 +15,41 @@ from instro.lib import InstroError, Instrument
 from instro.lib.publishers import Publisher
 from instro.lib.types import Command, Measurement
 from instro.lib.instrument import publish_command, publish_measurement
-
-from pathlib import Path
+from .types import SweepType,NetworkFileFormat
+from .storage import DiskStorage,Storage
+from .external import network_to_dict
 
 logger = logging.getLogger(__name__)
 
 
-def returns_numeric(func):
+
+def hint_returns_numeric(func):
+    """Return whether a callable is annotated to return a numeric type.
+
+    This is used to detect measurement getters that expose scalar numeric
+    values, such as ``float`` or ``int`` returns.
+    """
     t = get_type_hints(func).get('return', None)
-    return isinstance(t, type) and issubclass(t,  Number)
+    return isinstance(t, type) and issubclass(t, Number)
 
 class VNADriverBase(abc.ABC):
-    """Base class for VNA drivers."""
+    """Base class for VNA drivers.
 
+    Required abstract methods:
+        - ``get_freq_start(ch: int | None = None) -> float``
+        - ``get_freq_stop(ch: int | None = None) -> float``
+        - ``get_freq_npoints(ch: int | None = None) -> int``
+        - ``get_nports(ch: int | None = None) -> int``
+        - ``get_smat(m: int, n: int, ch: int | None = None) -> np.ndarray``
 
+    Notes
+    -----
+    This is a flat representation with regard to channels, meaning it does
+    not use nested channel objects; instead, ``ch`` is a simple argument to
+    all relevant methods.
+    """
+    #TODO: have a clever way to pass `ch` everwhere without seeing it all the time
+    # maybe a `channalize` decorator
     @abc.abstractmethod
     def get_freq_start(self, ch: int|None = None) -> float:
         """Get the start frequency of the VNA in Hz."""
@@ -85,8 +104,9 @@ class VNADriverBase(abc.ABC):
     def get_nports(self, ch: int|None = None) -> int:
         """Get the number of ports of the VNA."""
         ...
+
     @abc.abstractmethod
-    def get_s(
+    def get_smat(
         self, 
         m:int, 
         n:int, 
@@ -100,19 +120,22 @@ class VNADriverBase(abc.ABC):
         """
         ...
 
-    
     def get_frequency(
         self,
         ch: int|None = None,
         unit: str = 'ghz',
+        sweep_type: SweepType = 'LIN', 
         ) -> skrf.Frequency:
         """Get the frequency of the VNA."""
-        frequency = skrf.Frequency(
-            start=self.get_freq_start(ch=ch), 
-            stop=self.get_freq_stop(ch=ch), 
-            npoints=self.get_freq_npoints(ch=ch),
-            )
-        frequency.unit = unit
+        if sweep_type == 'LIN':
+            frequency = skrf.Frequency(
+                start=self.get_freq_start(ch=ch), 
+                stop=self.get_freq_stop(ch=ch), 
+                npoints=self.get_freq_npoints(ch=ch),
+                )
+            frequency.unit = unit
+        else:
+            raise NotImplementedError
         return frequency
     
     def set_frequency(
@@ -140,10 +163,18 @@ class VNADriverBase(abc.ABC):
             ch: int|None = None,
             **kw,
         ) -> skrf.Network:
-        """Get a network from the VNA in form of a skrf.Network object.
-        ch: The channel number to get the network from. If None, use the active channel or dont use channels if not supported.
-        ports: The ports to get the network from. If None, use all ports.
-        **kw: Additional keyword arguments passed to the underlying Network() constructor.
+        """Get a network from the VNA as an ``skrf.Network`` object.
+
+        Args:
+            ports: Port indices to include in the network. If ``None``, all
+                ports reported by the instrument are used.
+            ch: Channel number to query. If ``None``, the active channel is
+                used when supported.
+            **kw: Additional keyword arguments passed to the underlying
+                ``skrf.Network`` constructor.
+
+        Returns:
+            A network object containing the measured S-parameters.
         """
         frequency = self.get_frequency(ch=ch)
         if ports is None:
@@ -159,10 +190,17 @@ class VNADriverBase(abc.ABC):
         return network
 
     def get_s(self, m:int, n:int, ch: int|None = None,**kw) -> skrf.Network:
-        """Get a single S-parameter as a one-port skrf.Network object.
-        m: The row index of the S-parameter (0-based).
-        n: The column index of the S-parameter (0-based).
-        ch: The channel number to get the S-parameter from. If None, use the active channel or dont use channels if not supported.
+        """Get a single S-parameter as a one-port network object.
+
+        Args:
+            m: Row index of the S-parameter (0-based).
+            n: Column index of the S-parameter (0-based).
+            ch: Channel number to query. If ``None``, the active channel is
+                used when supported.
+            **kw: Extra keyword arguments forwarded to ``skrf.Network``.
+
+        Returns:
+            A one-port network containing the selected S-parameter.
         """
         frequency = self.get_frequency(ch=ch)
         s = self.get_smat(m, n, ch=ch)
@@ -185,38 +223,7 @@ class VNADriverBase(abc.ABC):
     def s12( self):
         return self.get_s(m=0, n=1) 
 
-
-
-
-
-class Storage(abc.ABC):
-    """Base class for data storage."""
-    @abc.abstractmethod
-    def get_path_for_filename(self, filename: str) -> Path:
-        """Get the path to the file for the specified name."""
-        ...
-
-class DiskStorage(Storage):
-    '''Class to handle disk storage of  data.'''
-    def __init__(
-        self, 
-        path: str | None = None, 
-    ):
-        if path is not None:
-            self.storage_path = Path(path)
-            self.storage_path.mkdir(parents=True, exist_ok=True)
-        else:
-            #get a temp dir 
-            self.storage_path = Path(tempfile.mkdtemp())
-        self.storage_format = format
-
-    def get_path_for_filename(self, filename: str|Path) -> Path:
-        """Get the path to the file for the specified name."""
-        return self.storage_path / Path(filename)
-    
-
 class InstroVNA(Instrument):
-    
     def __init__(
         self,
         name: str,
@@ -225,8 +232,28 @@ class InstroVNA(Instrument):
         storage: Storage  = DiskStorage(), 
         **kwargs,
     ):
+        """
+        High-level VNA wrapper around a vendor driver.
 
-         
+        This class exposes the underlying driver through the Instro instrument
+        interface and wraps numeric getter calls as published measurements.
+
+        Args:
+            name: Human-readable name for the instrument.
+            driver: Vendor-specific VNA driver implementing the
+                ``VNADriverBase`` interface.
+            publishers: Optional publishers for measurements and commands.
+            storage: Storage backend used for saving network data.
+            **kwargs: Extra keyword arguments passed to the base
+                ``Instrument`` initializer.
+
+
+        Notes
+        -----
+        Any method on ``driver`` whose name starts with ``get_`` and whose return
+        annotation is numeric is wrapped and published as an Instro
+        ``Measurement``.
+        """
         super().__init__(name, publishers=publishers, **kwargs)
         self._driver = driver
         self._resource_lock = threading.Lock()
@@ -287,7 +314,7 @@ class InstroVNA(Instrument):
         if hasattr(driver, name):
             attr = getattr(driver, name)
             if callable(attr):
-                if name.startswith("get_") and returns_numeric(attr):
+                if name.startswith("get_") and hint_returns_numeric(attr):
                     @wraps(attr)
                     def _wrapped( **kwargs):
                         return self._execute_measurement(driver_method=attr, driver_kwargs=kwargs)
@@ -305,9 +332,10 @@ class InstroVNA(Instrument):
         name: str | None = None,
         ports: Sequence[int] | None = None, 
         ch: int | None = None, 
-
+        format: NetworkFileFormat='SNP', 
         **kw) -> skrf.Network:
-        """get and save a network to self._storage and return a Measurement with the path to the saved file."""
+        """measure a network, save it to self._storage, and return a Measurement 
+        with channel_data=path to the saved file."""
 
         with self._resource_lock:
             timestamp = time.time_ns()
@@ -315,14 +343,35 @@ class InstroVNA(Instrument):
         if name is None:
             name = f"{self.name}_network_{timestamp}"
         path = self._storage.get_path_for_filename(f"{name}.s{network.nports}p")
-        network.write_touchstone(path)   
-        
+        if format == 'SNP':
+            network.write_touchstone(path)   
+        else:
+            raise NotImplementedError
+
 
         return Measurement(
             channel_data={f"{self.name}.save_network": str(path)},
             timestamps=[timestamp],
             tags={**self.default_tags},)
+
+    def measure_network(
+        self, 
+        name: str | None = None,
+        port: int =0,
+        ch: int | None = None, 
+        **kw) -> skrf.Network:
+        """get and save a network to self._storage and return a Measurement with the path to the saved file."""
+        #TODO: make port allow multiple 'ports', requires network_to_dict() to support this first
+        with self._resource_lock:
+            timestamp = time.time_ns()
+            network = self._driver.get_network(ports=[port], ch=ch, **kw)
+        if name is None:
+            name = f"{self.name}_network_{timestamp}"
+
+        data = network_to_dict(network)
  
+        return Measurement(
+            channel_data={f"{self.name}.save_network": data},
+            timestamps=[timestamp],
+            tags={**self.default_tags},)
 
-
-    

@@ -3,7 +3,7 @@ import serial
 import numpy as np
 from collections.abc import Sequence
 import skrf as skrf
-from instro.unstable.vna.vna import VNADriverBase
+from ..vna import VNADriverBase
 
 class NanoVNAv2Clone(VNADriverBase):
     def __init__(self, port='/dev/ttyACM0', baudrate=9600, timeout=3.0):
