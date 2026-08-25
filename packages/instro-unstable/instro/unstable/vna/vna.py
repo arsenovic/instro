@@ -247,6 +247,20 @@ class InstroVNA(Instrument):
             **kwargs: Extra keyword arguments passed to the base
                 ``Instrument`` initializer.
 
+        Examples
+        --------
+        >>> from instro.unstable.vna.vna import InstroVNA
+        >>> from instro.unstable.vna.drivers.nanovna_v2clone import NanoVNAv2Clone
+        >>> from instro.unstable.vna.storage import DiskStorage
+        >>>
+        >>> vna = InstroVNA(
+        ...     name='bob',
+        ...     driver=NanoVNAv2Clone(port='/dev/ttyACM0'),
+        ...     storage=DiskStorage(),  # default path is a tempdir
+        ... )
+        >>> network = vna.get_network()
+        >>> vna.save_network('billy')
+        >>> vna.measure_network()
 
         Notes
         -----
