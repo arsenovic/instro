@@ -1,12 +1,15 @@
 from enum import Enum
 
+
 class SweepType(Enum):
-    '''the kind of frequency sweep'''
+    """the kind of frequency sweep"""
+
     LIN = "LIN"
     LOG = "LOG"
 
+
 class NetworkFileFormat(Enum):
-    SNP="SNP"
-    JSON="JSON"
+    SNP = "SNP"
+    JSON = "JSON"
     CSV = "CSV"
-    CITI="CITI"
+    CITI = "CITI"
