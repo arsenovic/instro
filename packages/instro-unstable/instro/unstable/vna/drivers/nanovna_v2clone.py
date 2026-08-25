@@ -1,8 +1,10 @@
 import time
-import serial
-import numpy as np
 from collections.abc import Sequence
+
+import numpy as np
+import serial
 import skrf as skrf
+
 from ..vna import VNADriverBase
 
 

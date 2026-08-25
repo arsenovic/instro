@@ -1,22 +1,23 @@
 import abc
 import logging
-import time
 import threading
-from typing import Any, Callable, get_type_hints
+import time
 from collections.abc import Sequence
+from functools import wraps
 from numbers import Number
+from typing import Any, Callable, get_type_hints
 
 import numpy as np
 import skrf
-from functools import wraps
 
 from instro.lib import InstroError, Instrument
+from instro.lib.instrument import publish_command, publish_measurement
 from instro.lib.publishers import Publisher
 from instro.lib.types import Command, Measurement
-from instro.lib.instrument import publish_command, publish_measurement
-from .types import SweepType, NetworkFileFormat
-from .storage import DiskStorage, Storage
+
 from .external import network_to_dict
+from .storage import DiskStorage, Storage
+from .types import NetworkFileFormat, SweepType
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class VNADriverBase(abc.ABC):
         - ``get_nports(ch: int | None = None) -> int``
         - ``get_smat(m: int, n: int, ch: int | None = None) -> np.ndarray``
 
-    Notes
+    Notes:
     -----
     This is a flat representation with regard to channels, meaning it does
     not use nested channel objects; instead, ``ch`` is a simple argument to
@@ -105,8 +106,7 @@ class VNADriverBase(abc.ABC):
         n: int,
         ch: int | None = None,
     ) -> np.array:
-        """
-        Get a single S-parameter as a complex numpy array.
+        """Get a single S-parameter as a complex numpy array.
         m: The row index of the S-parameter (0-based).
         n: The column index of the S-parameter (0-based).
         ch: The channel number to get the S-parameter from. If None, use the active channel or dont use channels if not supported.
@@ -224,8 +224,7 @@ class InstroVNA(Instrument):
         storage: Storage = DiskStorage(),
         **kwargs,
     ):
-        """
-        High-level VNA wrapper around a vendor driver.
+        """High-level VNA wrapper around a vendor driver.
 
         This class exposes the underlying driver through the Instro instrument
         interface and wraps numeric getter calls as published measurements.
@@ -239,7 +238,7 @@ class InstroVNA(Instrument):
             **kwargs: Extra keyword arguments passed to the base
                 ``Instrument`` initializer.
 
-        Examples
+        Examples:
         --------
         >>> from instro.unstable.vna.vna import InstroVNA
         >>> from instro.unstable.vna.drivers.nanovna_v2clone import NanoVNAv2Clone
@@ -254,7 +253,7 @@ class InstroVNA(Instrument):
         >>> vna.save_network('billy')
         >>> vna.measure_network()
 
-        Notes
+        Notes:
         -----
         Any method on ``driver`` whose name starts with ``get_`` and whose return
         annotation is numeric is wrapped and published as an Instro
@@ -305,7 +304,7 @@ class InstroVNA(Instrument):
 
     @property
     def driver(self) -> VNADriverBase:
-        """The underlying vendor driver"""
+        """The underlying vendor driver."""
         return self._driver
 
     def __getattr__(self, name: str):
@@ -340,9 +339,9 @@ class InstroVNA(Instrument):
         format: NetworkFileFormat = "SNP",
         **kw,
     ) -> skrf.Network:
-        """measure a network, save it to self._storage, and return a Measurement
-        with channel_data=path to the saved file."""
-
+        """Measure a network, save it to self._storage, and return a Measurement
+        with channel_data=path to the saved file.
+        """
         with self._resource_lock:
             timestamp = time.time_ns()
             network = self._driver.get_network(ports=ports, ch=ch, **kw)
@@ -361,7 +360,7 @@ class InstroVNA(Instrument):
         )
 
     def measure_network(self, name: str | None = None, port: int = 0, ch: int | None = None, **kw) -> skrf.Network:
-        """get and save a network to self._storage and return a Measurement with the path to the saved file."""
+        """Get and save a network to self._storage and return a Measurement with the path to the saved file."""
         # TODO: make port allow multiple 'ports', requires network_to_dict() to support this first
         with self._resource_lock:
             timestamp = time.time_ns()

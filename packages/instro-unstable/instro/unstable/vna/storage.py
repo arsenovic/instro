@@ -1,10 +1,8 @@
-"""
-File storage mechanisms
-"""
+"""File storage mechanisms."""
 
 import abc
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 
 class Storage(abc.ABC):
