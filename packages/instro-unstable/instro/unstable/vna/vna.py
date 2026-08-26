@@ -125,9 +125,9 @@ class VNADriverBase(abc.ABC):
                 start=self.get_freq_start(ch=ch),
                 stop=self.get_freq_stop(ch=ch),
                 npoints=self.get_freq_npoints(ch=ch),
-                unit =unit)
-            
-            frequency.unit = unit
+                unit=unit,
+            )
+
         else:
             raise NotImplementedError
         return frequency

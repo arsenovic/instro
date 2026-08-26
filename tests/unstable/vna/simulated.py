@@ -69,6 +69,6 @@ class SimulatedVNA(VNADriverBase):
         return amplitude * np.exp(1j * phase)
 
     def get_frequency(self, ch: int | None = None, unit: str = "ghz", sweep_type: str = "LIN") -> skrf.Frequency:
-        frequency = skrf.Frequency(start=self._start_hz, stop=self._stop_hz, npoints=self._npoints,unit='hz')
+        frequency = skrf.Frequency(start=self._start_hz, stop=self._stop_hz, npoints=self._npoints, unit="hz")
         frequency.unit = unit
         return frequency
