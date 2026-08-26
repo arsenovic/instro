@@ -115,11 +115,7 @@ class NanoVNAv2Clone(VNADriverBase):
 
         return np.array(complex_data)
 
-    # def get_frequency(self, ch = None):
-    #    frequency = skrf.Frequency.from_f(self.get_f(), unit='hz')
-    #    frequency.unit = 'ghz'
-    #    return frequency
-
+     
     def set_frequency(self, freq, ch=None):
         raise NotImplementedError()
 
@@ -132,23 +128,4 @@ class NanoVNAv2Clone(VNADriverBase):
             # TODO: add a warning?
             return np.zeros(self.get_freq_npoints())
 
-    def get_network2(self, ports: Sequence[int] | None = None, ch: int | None = None, **kw) -> skrf.Network:
-        frequency = self.get_frequency()
-        frequency.unit = "ghz"
-
-        if ports == [0]:
-            s = self.get_channel_data(array_index=0)
-
-        elif ports == [0, 1] or ports == None:
-            s11 = self.get_channel_data(array_index=0)
-            s21 = self.get_channel_data(array_index=1)
-            s = np.zeros((len(s11), 2, 2), dtype=complex)
-            s[:, 0, 0] = s11  # S11
-            s[:, 1, 0] = s21  # S21
-            s[:, 0, 1] = 0.0  # S12 (Not hardware supported)
-            s[:, 1, 1] = 0.0  # S22 (Not hardware supported)
-        else:
-            ValueError("nanovna only supports the following ports values: [0], [0,1]")
-
-        network = skrf.Network(frequency=frequency, s=s, **kw)
-        return network
+     
