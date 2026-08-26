@@ -2,7 +2,7 @@ from enum import Enum
 
 
 class SweepType(Enum):
-    """the kind of frequency sweep"""
+    """the kind of frequency sweep."""
 
     LIN = "LIN"
     LOG = "LOG"
