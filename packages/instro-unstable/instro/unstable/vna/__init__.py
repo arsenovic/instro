@@ -1,2 +1,3 @@
-from .vna import VNADriverBase, InstroVNA  
-all = ["VNADriverBase","InstroVNA"]
+from .vna import InstroVNA, VNADriverBase
+
+all = ["VNADriverBase", "InstroVNA"]
