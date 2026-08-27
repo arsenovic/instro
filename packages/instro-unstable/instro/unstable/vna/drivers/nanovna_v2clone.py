@@ -115,7 +115,6 @@ class NanoVNAv2Clone(VNADriverBase):
 
         return np.array(complex_data)
 
-     
     def set_frequency(self, freq, ch=None):
         raise NotImplementedError()
 
@@ -127,5 +126,3 @@ class NanoVNAv2Clone(VNADriverBase):
         else:
             # TODO: add a warning?
             return np.zeros(self.get_freq_npoints())
-
-     

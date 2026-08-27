@@ -13,6 +13,44 @@ DEFAULT_NPOINTS = 5
 DEFAULT_NPORTS = 2
 
 
+class SimulatedSKRFChannel:
+    """Minimal skrf-like channel object used by the shim tests."""
+
+    def __init__(
+        self,
+        *,
+        start_hz: float = DEFAULT_FREQ_START_HZ,
+        stop_hz: float = DEFAULT_FREQ_STOP_HZ,
+        npoints: int = DEFAULT_NPOINTS,
+        nports: int = DEFAULT_NPORTS,
+    ) -> None:
+        self.freq_start = float(start_hz)
+        self.freq_stop = float(stop_hz)
+        self.npoints = int(npoints)
+        self.nports = int(nports)
+
+    def s_data(self, m: int, n: int, *args, **kwargs) -> np.ndarray:
+        rng = np.random.default_rng(seed=(self.npoints + self.nports + m * 10 + n * 7))
+        phase = rng.uniform(0.0, 2.0 * np.pi, size=self.npoints)
+        amplitude = rng.uniform(0.05, 0.9, size=self.npoints)
+        return amplitude * np.exp(1j * phase)
+
+
+class SimulatedSKRFRSVNA:
+    """Minimal skrf RSVNA stub implementing the surface touched by the shim."""
+
+    def __init__(
+        self,
+        *,
+        start_hz: float = DEFAULT_FREQ_START_HZ,
+        stop_hz: float = DEFAULT_FREQ_STOP_HZ,
+        npoints: int = DEFAULT_NPOINTS,
+        nports: int = DEFAULT_NPORTS,
+    ) -> None:
+        self.ch1 = SimulatedSKRFChannel(start_hz=start_hz, stop_hz=stop_hz, npoints=npoints, nports=nports)
+        self.ch2 = SimulatedSKRFChannel(start_hz=start_hz, stop_hz=stop_hz, npoints=npoints, nports=nports)
+
+
 class SimulatedVNA(VNADriverBase):
     """Deterministic sweep generator returning the expected VNA data."""
 
