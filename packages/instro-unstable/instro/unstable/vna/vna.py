@@ -9,7 +9,7 @@ from numbers import Number
 from typing import Any, Callable, get_type_hints
 
 import numpy as np
-import skrf
+import skrf  # type: ignore[import-untyped]
 
 from instro.lib import InstroError, Instrument
 from instro.lib.instrument import publish_command, publish_measurement
@@ -54,50 +54,50 @@ class VNADriverBase(abc.ABC):
     @abc.abstractmethod
     def get_freq_start(self, ch: int | None = None) -> float:
         """Get the start frequency of the VNA in Hz."""
-        return NotImplementedError
+        raise NotImplementedError
 
     def set_freq_start(self, ch: int | None = None, freq: float | None = None) -> float:
         """Set the start frequency of the VNA in Hz."""
-        return NotImplementedError
+        raise NotImplementedError
 
     @abc.abstractmethod
     def get_freq_stop(self, ch: int | None = None) -> float:
         """Get the stop frequency of the VNA in Hz."""
-        return NotImplementedError
+        raise NotImplementedError
 
     def set_freq_stop(self, ch: int | None = None, freq: float | None = None) -> float:
         """Set the stop frequency of the VNA in Hz."""
-        return NotImplementedError
+        raise NotImplementedError
 
     def get_freq_span(self, ch: int | None = None) -> float:
         """Get the frequency span of the VNA in Hz."""
-        return NotImplementedError
+        raise NotImplementedError
 
     def set_freq_span(self, ch: int | None = None, freq: float | None = None) -> float:
         """Set the frequency span of the VNA in Hz."""
-        return NotImplementedError
+        raise NotImplementedError
 
     def get_freq_center(self, ch: int | None = None) -> float:
         """Get the center frequency of the VNA in Hz."""
-        return NotImplementedError
+        raise NotImplementedError
 
     def set_freq_center(self, ch: int | None = None, freq: float | None = None) -> float:
         """Set the center frequency of the VNA in Hz."""
-        return NotImplementedError
+        raise NotImplementedError
 
     @abc.abstractmethod
     def get_freq_npoints(self, ch: int | None = None) -> int:
         """Get the number of frequency points of the VNA sweep."""
-        return NotImplementedError
+        raise NotImplementedError
 
     def set_freq_npoints(self, ch: int | None = None, npoints: int | None = None) -> int:
         """Set the number of frequency points of the VNA sweep."""
-        return NotImplementedError
+        raise NotImplementedError
 
     @abc.abstractmethod
     def get_nports(self, ch: int | None = None) -> int:
         """Get the number of ports of the VNA."""
-        return NotImplementedError
+        raise NotImplementedError
 
     @abc.abstractmethod
     def get_smat(
@@ -105,13 +105,9 @@ class VNADriverBase(abc.ABC):
         m: int,
         n: int,
         ch: int | None = None,
-    ) -> np.array:
-        """Get a single S-parameter as a complex numpy array.
-        m: The row index of the S-parameter (0-based).
-        n: The column index of the S-parameter (0-based).
-        ch: The channel number to get the S-parameter from. If None, use the active channel or dont use channels if not supported.
-        """
-        return NotImplementedError
+    ) -> np.ndarray:
+        """Get one S-parameter (0-based row m, column n) as a complex array."""
+        raise NotImplementedError
 
     def get_frequency(
         self,
@@ -276,16 +272,13 @@ class InstroVNA(Instrument):
         **kwargs,
     ) -> Measurement | None:
         """Execute a driver measurement method and return a Measurement for the read value."""
-        name = driver_method.__name__
-        channel = name.split("_")[1]  # get_freq_start  # freq is the channel
-        # could do something with kwargs to assembly channel name better
         with self._resource_lock:
             data = driver_method(**(driver_kwargs or {}))
             timestamp = time.time_ns()
 
-        channel = f"ch{driver_method.__name__}"
+        channel_name = f"ch{driver_method.__name__}"
 
-        return self._package_measurement(channel=channel, data=data, timestamp=timestamp, **kwargs)
+        return self._package_measurement(channel=channel_name, data=data, timestamp=timestamp, **kwargs)
 
     @publish_command
     def _execute_command(
@@ -300,8 +293,8 @@ class InstroVNA(Instrument):
             driver_method(value, channel=channel)
             timestamp = time.time_ns()
 
-        channel = f"ch{driver_method.__name__}.cmd"
-        return self._package_command(channel=channel, data=value, timestamp=timestamp, **kwargs)
+        channel_name = f"ch{driver_method.__name__}.cmd"
+        return self._package_command(channel=channel_name, data=value, timestamp=timestamp, **kwargs)
 
     @property
     def driver(self) -> VNADriverBase:
@@ -340,9 +333,7 @@ class InstroVNA(Instrument):
         format: NetworkFileFormat = NetworkFileFormat.SNP,
         **kw,
     ) -> Measurement:
-        """Measure a network, save it to self._storage, and return a Measurement
-        with channel_data=path to the saved file.
-        """
+        """Measure a network, save it to storage, and return a Measurement holding the saved path."""
         with self._resource_lock:
             timestamp = time.time_ns()
             network = self._driver.get_network(ports=ports, ch=ch, **kw)

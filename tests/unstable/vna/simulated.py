@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-import skrf
 
 from instro.unstable.vna.vna import VNADriverBase
 
@@ -67,8 +66,3 @@ class SimulatedVNA(VNADriverBase):
         phase = rng.uniform(0.0, 2.0 * np.pi, size=self._npoints)
         amplitude = rng.uniform(0.05, 0.9, size=self._npoints)
         return amplitude * np.exp(1j * phase)
-
-    def get_frequency(self, ch: int | None = None, unit: str = "ghz", sweep_type: str = "LIN") -> skrf.Frequency:
-        frequency = skrf.Frequency(start=self._start_hz, stop=self._stop_hz, npoints=self._npoints, unit="hz")
-        frequency.unit = unit
-        return frequency

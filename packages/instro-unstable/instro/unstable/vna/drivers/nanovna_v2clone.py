@@ -3,8 +3,8 @@ from collections.abc import Sequence
 
 import numpy as np
 import serial
-import skrf as skrf
 
+from instro.lib import InstroError
 from instro.unstable.vna.vna import VNADriverBase
 
 
@@ -14,9 +14,14 @@ class NanoVNAv2Clone(VNADriverBase):
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
-        self.ser = None
+        self.ser: serial.Serial | None = None
         self._nports = 2
         self.open()
+
+    def _require_open(self) -> serial.Serial:
+        if self.ser is None:
+            raise InstroError("NanoVNA serial port is not open")
+        return self.ser
 
     def open(self):
         """Opens the serial port interface."""
@@ -41,18 +46,20 @@ class NanoVNAv2Clone(VNADriverBase):
 
     def _send_command(self, cmd_string):
         """Sends an ASCII text command and flushes buffers."""
+        ser = self._require_open()
         full_cmd = f"{cmd_string}\r\n".encode("ascii")
-        self.ser.write(full_cmd)
-        self.ser.flush()
+        ser.write(full_cmd)
+        ser.flush()
         time.sleep(0.1)  # Small processing delay for the VNA micro-controller
 
     def _read_lines(self):
         """Reads back incoming lines until the trailing prompt or timeout occurs."""
+        ser = self._require_open()
         lines = []
         start_time = time.time()
         while (time.time() - start_time) < self.timeout:
-            if self.ser.in_waiting > 0:
-                line = self.ser.readline().decode("ascii", errors="ignore").strip()
+            if ser.in_waiting > 0:
+                line = ser.readline().decode("ascii", errors="ignore").strip()
                 if not line:
                     continue
                 # If we encounter the command prompt character, parsing is complete
@@ -72,7 +79,7 @@ class NanoVNAv2Clone(VNADriverBase):
 
     def get_f(self):
         """Queries the device for the active sweep frequencies."""
-        self.ser.reset_input_buffer()
+        self._require_open().reset_input_buffer()
         self._send_command("frequencies")
         raw_lines = self._read_lines()
 
@@ -95,7 +102,7 @@ class NanoVNAv2Clone(VNADriverBase):
 
     def get_channel_data(self, array_index=0):
         """Fetches raw S-parameter values (array 0 = S11, array 1 = S21)."""
-        self.ser.reset_input_buffer()
+        self._require_open().reset_input_buffer()
         self._send_command(f"data {array_index}")
         raw_lines = self._read_lines()
 
