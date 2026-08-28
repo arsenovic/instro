@@ -116,7 +116,7 @@ class VNADriverBase(abc.ABC):
     def get_frequency(
         self,
         ch: int | None = None,
-        unit: str = "ghz",
+        unit: str = "ghz", #TODO: this should be validated
         sweep_type: SweepType = "LIN",
     ) -> skrf.Frequency:
         """Get the frequency of the VNA."""
@@ -125,9 +125,9 @@ class VNADriverBase(abc.ABC):
                 start=self.get_freq_start(ch=ch),
                 stop=self.get_freq_stop(ch=ch),
                 npoints=self.get_freq_npoints(ch=ch),
-                unit=unit,
-            )
-
+                unit ='hz')
+            frequency.unit=unit
+            
         else:
             raise NotImplementedError
         return frequency
@@ -222,7 +222,7 @@ class InstroVNA(Instrument):
         name: str,
         driver: VNADriverBase,
         publishers: list[Publisher] | None = None,
-        storage: Storage = DiskStorage(),
+        storage: Storage|None = None,
         **kwargs,
     ):
         """High-level VNA wrapper around a vendor driver.
@@ -263,7 +263,7 @@ class InstroVNA(Instrument):
         super().__init__(name, publishers=publishers, **kwargs)
         self._driver = driver
         self._resource_lock = threading.Lock()
-        self._storage = storage
+        self._storage = storage if storage is not None else DiskStorage()
 
     # this is general and should be inherited
     @publish_measurement
