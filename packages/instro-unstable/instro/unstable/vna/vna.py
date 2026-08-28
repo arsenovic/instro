@@ -3,6 +3,7 @@ import logging
 import threading
 import time
 from collections.abc import Sequence
+from enum import Enum
 from functools import wraps
 from numbers import Number
 from typing import Any, Callable, get_type_hints
@@ -117,17 +118,18 @@ class VNADriverBase(abc.ABC):
         self,
         ch: int | None = None,
         unit: str = "ghz", #TODO: this should be validated
-        sweep_type: SweepType = "LIN",
+        sweep_type: SweepType = SweepType.LIN,
     ) -> skrf.Frequency:
         """Get the frequency of the VNA."""
-        if sweep_type == "LIN":
+        
+        if sweep_type == SweepType.LIN:
             frequency = skrf.Frequency(
                 start=self.get_freq_start(ch=ch),
                 stop=self.get_freq_stop(ch=ch),
                 npoints=self.get_freq_npoints(ch=ch),
-                unit ='hz')
-            frequency.unit=unit
-            
+                unit="hz",
+            )
+            frequency.unit = unit
         else:
             raise NotImplementedError
         return frequency
@@ -337,19 +339,20 @@ class InstroVNA(Instrument):
         name: str | None = None,
         ports: Sequence[int] | None = None,
         ch: int | None = None,
-        format: NetworkFileFormat = "SNP",
+        format: NetworkFileFormat = NetworkFileFormat.SNP,
         **kw,
     ) -> Measurement:
         """Measure a network, save it to self._storage, and return a Measurement
         with channel_data=path to the saved file.
         """
+         
         with self._resource_lock:
             timestamp = time.time_ns()
             network = self._driver.get_network(ports=ports, ch=ch, **kw)
         if name is None:
             name = f"{self.name}_network_{timestamp}"
         path = self._storage.get_path_for_filename(f"{name}.s{network.nports}p")
-        if format == "SNP":
+        if format == NetworkFileFormat.SNP:
             network.write_touchstone(path)
         else:
             raise NotImplementedError

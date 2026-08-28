@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from instro.unstable.vna.storage import DiskStorage
+from instro.unstable.vna.types import NetworkFileFormat, SweepType
 from instro.unstable.vna.vna import InstroVNA
 from tests.unstable.vna.simulated import DEFAULT_NPOINTS, DEFAULT_NPORTS, SimulatedVNA
 
@@ -35,9 +36,14 @@ def test_instro_vna_get_network_and_get_s_build_expected_shapes(vna: InstroVNA) 
 def test_instro_vna_save_network_writes_touchstone_file(vna: InstroVNA, tmp_path: Path) -> None:
     vna._storage = DiskStorage(path=str(tmp_path))
 
-    measurement = vna.save_network(name="test_network", ports=[0, 1], ch=1)
+    measurement = vna.save_network(
+        name="test_network",
+        ports=[0, 1],
+        ch=1,
+        format=NetworkFileFormat.SNP,
+    )
 
-    saved_path = Path(measurement.channel_data["ut.save_network"])
+    saved_path = Path(measurement.channel_data["ut.save_network"]["path"])
     assert saved_path.name.endswith(".s2p")
     assert saved_path.exists()
 
@@ -45,6 +51,6 @@ def test_instro_vna_save_network_writes_touchstone_file(vna: InstroVNA, tmp_path
 def test_instro_vna_measure_network_returns_serialized_data(vna: InstroVNA) -> None:
     measurement = vna.measure_network(name="payload", port=0, ch=1)
 
-    payload = measurement.channel_data["ut.save_network"]
+    payload = measurement.channel_data["ut.measure_network"]
     assert set(payload) >= {"s_db", "f_hz", "f_unit"}
-    assert payload["f_hz"] == pytest.approx(vna.driver.get_frequency().f.tolist())
+    assert payload["f_hz"] == pytest.approx(vna.driver.get_frequency(sweep_type=SweepType.LIN).f.tolist())

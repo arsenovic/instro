@@ -16,7 +16,6 @@ class Storage(abc.ABC):
 
 class DiskStorage(Storage):
     """Class to handle local disk storage of  data."""
-
     def __init__(
         self,
         path: str | None = None,
