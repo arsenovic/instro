@@ -15,7 +15,6 @@ from instro.lib import InstroError, Instrument
 from instro.lib.instrument import publish_command, publish_measurement
 from instro.lib.publishers import Publisher
 from instro.lib.types import Command, Measurement
-
 from instro.unstable.vna.external import network_to_dict
 from instro.unstable.vna.storage import DiskStorage, Storage
 from instro.unstable.vna.types import NetworkFileFormat, SweepType
@@ -117,11 +116,10 @@ class VNADriverBase(abc.ABC):
     def get_frequency(
         self,
         ch: int | None = None,
-        unit: str = "ghz", #TODO: this should be validated
+        unit: str = "ghz",  # TODO: this should be validated
         sweep_type: SweepType = SweepType.LIN,
     ) -> skrf.Frequency:
         """Get the frequency of the VNA."""
-        
         if sweep_type == SweepType.LIN:
             frequency = skrf.Frequency(
                 start=self.get_freq_start(ch=ch),
@@ -224,7 +222,7 @@ class InstroVNA(Instrument):
         name: str,
         driver: VNADriverBase,
         publishers: list[Publisher] | None = None,
-        storage: Storage|None = None,
+        storage: Storage | None = None,
         **kwargs,
     ):
         """High-level VNA wrapper around a vendor driver.
@@ -345,7 +343,6 @@ class InstroVNA(Instrument):
         """Measure a network, save it to self._storage, and return a Measurement
         with channel_data=path to the saved file.
         """
-         
         with self._resource_lock:
             timestamp = time.time_ns()
             network = self._driver.get_network(ports=ports, ch=ch, **kw)
@@ -355,7 +352,7 @@ class InstroVNA(Instrument):
         if format == NetworkFileFormat.SNP:
             network.write_touchstone(path)
         else:
-            raise NotImplementedError
+            raise NotImplementedError("See NetworkFileFormat for possible formats ")
 
         return Measurement(
             channel_data={f"{self.name}.save_network": dict(path=str(path))},
@@ -364,11 +361,8 @@ class InstroVNA(Instrument):
         )
 
     def measure_network(
-            self, 
-            name: str | None = None, 
-            ports: Sequence[int] | None = None,
-            ch: int | None = None, 
-            **kw) -> Measurement:
+        self, name: str | None = None, ports: Sequence[int] | None = None, ch: int | None = None, **kw
+    ) -> Measurement:
         """Get and save a network to self._storage and return a Measurement with the path to the saved file."""
         # TODO: make port allow multiple 'ports', requires network_to_dict() to support this first
         with self._resource_lock:
