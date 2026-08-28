@@ -15,9 +15,9 @@ from instro.lib.instrument import publish_command, publish_measurement
 from instro.lib.publishers import Publisher
 from instro.lib.types import Command, Measurement
 
-from .external import network_to_dict
-from .storage import DiskStorage, Storage
-from .types import NetworkFileFormat, SweepType
+from instro.unstable.vna.external import network_to_dict
+from instro.unstable.vna.storage import DiskStorage, Storage
+from instro.unstable.vna.types import NetworkFileFormat, SweepType
 
 logger = logging.getLogger(__name__)
 

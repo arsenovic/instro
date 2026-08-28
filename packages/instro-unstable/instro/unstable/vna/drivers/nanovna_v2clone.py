@@ -5,7 +5,7 @@ import numpy as np
 import serial
 import skrf as skrf
 
-from ..vna import VNADriverBase
+from instro.unstable.vna.vna import VNADriverBase
 
 
 class NanoVNAv2Clone(VNADriverBase):
