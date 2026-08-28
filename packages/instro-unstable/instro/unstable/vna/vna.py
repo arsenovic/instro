@@ -54,50 +54,50 @@ class VNADriverBase(abc.ABC):
     @abc.abstractmethod
     def get_freq_start(self, ch: int | None = None) -> float:
         """Get the start frequency of the VNA in Hz."""
-        ...
+        return NotImplementedError
 
     def set_freq_start(self, ch: int | None = None, freq: float | None = None) -> float:
         """Set the start frequency of the VNA in Hz."""
-        ...
+        return NotImplementedError
 
     @abc.abstractmethod
     def get_freq_stop(self, ch: int | None = None) -> float:
         """Get the stop frequency of the VNA in Hz."""
-        ...
+        return NotImplementedError
 
     def set_freq_stop(self, ch: int | None = None, freq: float | None = None) -> float:
         """Set the stop frequency of the VNA in Hz."""
-        ...
+        return NotImplementedError
 
     def get_freq_span(self, ch: int | None = None) -> float:
         """Get the frequency span of the VNA in Hz."""
-        ...
+        return NotImplementedError
 
     def set_freq_span(self, ch: int | None = None, freq: float | None = None) -> float:
         """Set the frequency span of the VNA in Hz."""
-        ...
+        return NotImplementedError
 
     def get_freq_center(self, ch: int | None = None) -> float:
         """Get the center frequency of the VNA in Hz."""
-        ...
+        return NotImplementedError
 
     def set_freq_center(self, ch: int | None = None, freq: float | None = None) -> float:
         """Set the center frequency of the VNA in Hz."""
-        ...
+        return NotImplementedError
 
     @abc.abstractmethod
     def get_freq_npoints(self, ch: int | None = None) -> int:
         """Get the number of frequency points of the VNA sweep."""
-        ...
+        return NotImplementedError
 
     def set_freq_npoints(self, ch: int | None = None, npoints: int | None = None) -> int:
         """Set the number of frequency points of the VNA sweep."""
-        ...
+        return NotImplementedError
 
     @abc.abstractmethod
     def get_nports(self, ch: int | None = None) -> int:
         """Get the number of ports of the VNA."""
-        ...
+        return NotImplementedError
 
     @abc.abstractmethod
     def get_smat(
@@ -111,7 +111,7 @@ class VNADriverBase(abc.ABC):
         n: The column index of the S-parameter (0-based).
         ch: The channel number to get the S-parameter from. If None, use the active channel or dont use channels if not supported.
         """
-        ...
+        return NotImplementedError
 
     def get_frequency(
         self,
@@ -339,7 +339,7 @@ class InstroVNA(Instrument):
         ch: int | None = None,
         format: NetworkFileFormat = "SNP",
         **kw,
-    ) -> skrf.Network:
+    ) -> Measurement:
         """Measure a network, save it to self._storage, and return a Measurement
         with channel_data=path to the saved file.
         """
@@ -355,24 +355,29 @@ class InstroVNA(Instrument):
             raise NotImplementedError
 
         return Measurement(
-            channel_data={f"{self.name}.save_network": str(path)},
+            channel_data={f"{self.name}.save_network": dict(path=str(path))},
             timestamps=[timestamp],
             tags={**self.default_tags},
         )
 
-    def measure_network(self, name: str | None = None, port: int = 0, ch: int | None = None, **kw) -> skrf.Network:
+    def measure_network(
+            self, 
+            name: str | None = None, 
+            ports: Sequence[int] | None = None,
+            ch: int | None = None, 
+            **kw) -> Measurement:
         """Get and save a network to self._storage and return a Measurement with the path to the saved file."""
         # TODO: make port allow multiple 'ports', requires network_to_dict() to support this first
         with self._resource_lock:
             timestamp = time.time_ns()
-            network = self._driver.get_network(ports=[port], ch=ch, **kw)
+            network = self._driver.get_network(ports=ports, ch=ch, **kw)
         if name is None:
             name = f"{self.name}_network_{timestamp}"
 
         data = network_to_dict(network)
 
         return Measurement(
-            channel_data={f"{self.name}.save_network": data},
+            channel_data={f"{self.name}.measure_network": data},
             timestamps=[timestamp],
             tags={**self.default_tags},
         )
