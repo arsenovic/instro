@@ -54,50 +54,46 @@ class VNADriverBase(abc.ABC):
     @abc.abstractmethod
     def get_freq_start(self, ch: int | None = None) -> float:
         """Get the start frequency of the VNA in Hz."""
-        raise NotImplementedError
 
     def set_freq_start(self, ch: int | None = None, freq: float | None = None) -> float:
         """Set the start frequency of the VNA in Hz."""
-        raise NotImplementedError
+        raise NotImplementedError("set_freq_start is not supported by this driver")
 
     @abc.abstractmethod
     def get_freq_stop(self, ch: int | None = None) -> float:
         """Get the stop frequency of the VNA in Hz."""
-        raise NotImplementedError
 
     def set_freq_stop(self, ch: int | None = None, freq: float | None = None) -> float:
         """Set the stop frequency of the VNA in Hz."""
-        raise NotImplementedError
+        raise NotImplementedError("set_freq_stop is not supported by this driver")
 
     def get_freq_span(self, ch: int | None = None) -> float:
         """Get the frequency span of the VNA in Hz."""
-        raise NotImplementedError
+        raise NotImplementedError("get_freq_span is not supported by this driver")
 
     def set_freq_span(self, ch: int | None = None, freq: float | None = None) -> float:
         """Set the frequency span of the VNA in Hz."""
-        raise NotImplementedError
+        raise NotImplementedError("set_freq_span is not supported by this driver")
 
     def get_freq_center(self, ch: int | None = None) -> float:
         """Get the center frequency of the VNA in Hz."""
-        raise NotImplementedError
+        raise NotImplementedError("get_freq_center is not supported by this driver")
 
     def set_freq_center(self, ch: int | None = None, freq: float | None = None) -> float:
         """Set the center frequency of the VNA in Hz."""
-        raise NotImplementedError
+        raise NotImplementedError("set_freq_center is not supported by this driver")
 
     @abc.abstractmethod
     def get_freq_npoints(self, ch: int | None = None) -> int:
         """Get the number of frequency points of the VNA sweep."""
-        raise NotImplementedError
 
     def set_freq_npoints(self, ch: int | None = None, npoints: int | None = None) -> int:
         """Set the number of frequency points of the VNA sweep."""
-        raise NotImplementedError
+        raise NotImplementedError("set_freq_npoints is not supported by this driver")
 
     @abc.abstractmethod
     def get_nports(self, ch: int | None = None) -> int:
         """Get the number of ports of the VNA."""
-        raise NotImplementedError
 
     @abc.abstractmethod
     def get_smat(
@@ -107,7 +103,6 @@ class VNADriverBase(abc.ABC):
         ch: int | None = None,
     ) -> np.ndarray:
         """Get one S-parameter (0-based row m, column n) as a complex array."""
-        raise NotImplementedError
 
     def get_frequency(
         self,
