@@ -327,28 +327,26 @@ class InstroVNA(Instrument):
         ch: int | None = None,
         format: NetworkFileFormat = NetworkFileFormat.SNP,
         **kw,
-    ) -> Measurement:
+    ) -> Path:
         """Measure a network, save it to storage, and return a Measurement holding the saved path."""
         with self._resource_lock:
             timestamp = time.time_ns()
             network = self._driver.get_network(ports=ports, ch=ch, **kw)
         if name is None:
             name = f"{self.name}_network_{timestamp}"
-        path = self._storage.get_path_for_filename(f"{name}.s{network.nports}p")
+
         if format == NetworkFileFormat.SNP:
+            path = self._storage.get_path_for_filename(f"{name}.s{network.nports}p")
             network.write_touchstone(path)
+
         else:
             raise NotImplementedError("See NetworkFileFormat for possible formats ")
-
-        return Measurement(
-            channel_data={f"{self.name}.save_network": dict(path=str(path))},
-            timestamps=[timestamp],
-            tags={**self.default_tags},
-        )
+        return path
+ 
 
     def measure_network(
         self, name: str | None = None, ports: Sequence[int] | None = None, ch: int | None = None, **kw
-    ) -> Measurement:
+    ) -> skrf.Network:
         """Get and save a network to self._storage and return a Measurement with the path to the saved file."""
         # TODO: make port allow multiple 'ports', requires network_to_dict() to support this first
         with self._resource_lock:
@@ -357,10 +355,5 @@ class InstroVNA(Instrument):
         if name is None:
             name = f"{self.name}_network_{timestamp}"
 
-        data = network_to_dict(network)
-
-        return Measurement(
-            channel_data={f"{self.name}.measure_network": data},
-            timestamps=[timestamp],
-            tags={**self.default_tags},
-        )
+        return network 
+         
