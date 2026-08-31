@@ -3,19 +3,18 @@ import logging
 import threading
 import time
 from collections.abc import Sequence
-from enum import Enum
 from functools import wraps
 from numbers import Number
+from pathlib import Path
 from typing import Any, Callable, get_type_hints
 
 import numpy as np
 import skrf  # type: ignore[import-untyped]
 
-from instro.lib import InstroError, Instrument
+from instro.lib import Instrument
 from instro.lib.instrument import publish_command, publish_measurement
 from instro.lib.publishers import Publisher
 from instro.lib.types import Command, Measurement
-from instro.unstable.vna.external import network_to_dict
 from instro.unstable.vna.storage import DiskStorage, Storage
 from instro.unstable.vna.types import NetworkFileFormat, SweepType
 
@@ -328,7 +327,7 @@ class InstroVNA(Instrument):
         format: NetworkFileFormat = NetworkFileFormat.SNP,
         **kw,
     ) -> Path:
-        """Measure a network, save it to storage, and return a Measurement holding the saved path."""
+        """Measure a network, write it to storage, and return the saved file's path."""
         with self._resource_lock:
             timestamp = time.time_ns()
             network = self._driver.get_network(ports=ports, ch=ch, **kw)
@@ -340,20 +339,7 @@ class InstroVNA(Instrument):
             network.write_touchstone(path)
 
         else:
-            raise NotImplementedError("See NetworkFileFormat for possible formats ")
+            raise NotImplementedError("See NetworkFileFormat for possible formats")
         return path
- 
 
-    def measure_network(
-        self, name: str | None = None, ports: Sequence[int] | None = None, ch: int | None = None, **kw
-    ) -> skrf.Network:
-        """Get and save a network to self._storage and return a Measurement with the path to the saved file."""
-        # TODO: make port allow multiple 'ports', requires network_to_dict() to support this first
-        with self._resource_lock:
-            timestamp = time.time_ns()
-            network = self._driver.get_network(ports=ports, ch=ch, **kw)
-        if name is None:
-            name = f"{self.name}_network_{timestamp}"
-
-        return network 
-         
+    # TODO: publishing network data as Measurements awaits non-timeseries payload support in instro.lib
