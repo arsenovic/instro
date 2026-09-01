@@ -37,25 +37,22 @@ class SimulatedVNA(VNADriverBase):
     def get_freq_start(self, ch: int | None = None) -> float:
         return self._start_hz
 
-    def set_freq_start(self, ch: int | None = None, freq: float | None = None) -> float:
-        if freq is not None:
-            self._start_hz = float(freq)
+    def set_freq_start(self, freq: float, ch: int | None = None) -> float:
+        self._start_hz = float(freq)
         return self._start_hz
 
     def get_freq_stop(self, ch: int | None = None) -> float:
         return self._stop_hz
 
-    def set_freq_stop(self, ch: int | None = None, freq: float | None = None) -> float:
-        if freq is not None:
-            self._stop_hz = float(freq)
+    def set_freq_stop(self, freq: float, ch: int | None = None) -> float:
+        self._stop_hz = float(freq)
         return self._stop_hz
 
     def get_freq_npoints(self, ch: int | None = None) -> int:
         return self._npoints
 
-    def set_freq_npoints(self, ch: int | None = None, npoints: int | None = None) -> int:
-        if npoints is not None:
-            self._npoints = int(npoints)
+    def set_freq_npoints(self, npoints: int, ch: int | None = None) -> int:
+        self._npoints = int(npoints)
         return self._npoints
 
     def get_nports(self, ch: int | None = None) -> int:

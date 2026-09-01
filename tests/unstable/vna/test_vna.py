@@ -52,6 +52,12 @@ def test_instro_vna_open_and_close_delegate_to_driver(vna: InstroVNA) -> None:
     driver_close.assert_called_once()
 
 
+def test_instro_vna_execute_command_programs_driver_setter(vna: InstroVNA) -> None:
+    vna._execute_command(driver_method=vna.driver.set_freq_start, value=1_500_000_000.0, channel=1)
+
+    assert vna.driver.get_freq_start() == 1_500_000_000.0
+
+
 def test_instro_vna_get_frequency_validates_unit_and_coerces_sweep_type(vna: InstroVNA) -> None:
     with pytest.raises(ValueError, match="invalid frequency unit"):
         vna.driver.get_frequency(unit="gigahurts")

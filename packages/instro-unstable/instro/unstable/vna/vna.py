@@ -62,7 +62,7 @@ class VNADriverBase(abc.ABC):
     def get_freq_start(self, ch: int | None = None) -> float:
         """Get the start frequency of the VNA in Hz."""
 
-    def set_freq_start(self, ch: int | None = None, freq: float | None = None) -> float:
+    def set_freq_start(self, freq: float, ch: int | None = None) -> float:
         """Set the start frequency of the VNA in Hz."""
         raise NotImplementedError("set_freq_start is not supported by this driver")
 
@@ -70,7 +70,7 @@ class VNADriverBase(abc.ABC):
     def get_freq_stop(self, ch: int | None = None) -> float:
         """Get the stop frequency of the VNA in Hz."""
 
-    def set_freq_stop(self, ch: int | None = None, freq: float | None = None) -> float:
+    def set_freq_stop(self, freq: float, ch: int | None = None) -> float:
         """Set the stop frequency of the VNA in Hz."""
         raise NotImplementedError("set_freq_stop is not supported by this driver")
 
@@ -78,7 +78,7 @@ class VNADriverBase(abc.ABC):
         """Get the frequency span of the VNA in Hz."""
         raise NotImplementedError("get_freq_span is not supported by this driver")
 
-    def set_freq_span(self, ch: int | None = None, freq: float | None = None) -> float:
+    def set_freq_span(self, freq: float, ch: int | None = None) -> float:
         """Set the frequency span of the VNA in Hz."""
         raise NotImplementedError("set_freq_span is not supported by this driver")
 
@@ -86,7 +86,7 @@ class VNADriverBase(abc.ABC):
         """Get the center frequency of the VNA in Hz."""
         raise NotImplementedError("get_freq_center is not supported by this driver")
 
-    def set_freq_center(self, ch: int | None = None, freq: float | None = None) -> float:
+    def set_freq_center(self, freq: float, ch: int | None = None) -> float:
         """Set the center frequency of the VNA in Hz."""
         raise NotImplementedError("set_freq_center is not supported by this driver")
 
@@ -94,7 +94,7 @@ class VNADriverBase(abc.ABC):
     def get_freq_npoints(self, ch: int | None = None) -> int:
         """Get the number of frequency points of the VNA sweep."""
 
-    def set_freq_npoints(self, ch: int | None = None, npoints: int | None = None) -> int:
+    def set_freq_npoints(self, npoints: int, ch: int | None = None) -> int:
         """Set the number of frequency points of the VNA sweep."""
         raise NotImplementedError("set_freq_npoints is not supported by this driver")
 
@@ -141,9 +141,9 @@ class VNADriverBase(abc.ABC):
         ch: int | None = None,
     ):
         """Set the frequency of the VNA."""
-        self.set_freq_start(ch=ch, freq=freq.start)
-        self.set_freq_stop(ch=ch, freq=freq.stop)
-        self.set_freq_npoints(ch=ch, npoints=freq.npoints)
+        self.set_freq_start(freq.start, ch=ch)
+        self.set_freq_stop(freq.stop, ch=ch)
+        self.set_freq_npoints(freq.npoints, ch=ch)
 
     @property
     def frequency(self):
@@ -307,7 +307,7 @@ class InstroVNA(Instrument):
     ) -> Command:
         """Execute a driver command method and return a Command for the published value."""
         with self._resource_lock:
-            driver_method(value, channel=channel)
+            driver_method(value, ch=channel)
             timestamp = time.time_ns()
 
         channel_name = f"ch{driver_method.__name__}.cmd"
