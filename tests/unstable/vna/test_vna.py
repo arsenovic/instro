@@ -23,6 +23,7 @@ def vna() -> InstroVNA:
 
 def test_instro_vna_get_freq_start_wraps_numeric_getter(vna: InstroVNA) -> None:
     measurement = vna.get_freq_start(ch=1)
+    assert measurement is not None
     assert "ut.chget_freq_start" in measurement.channel_data
     assert measurement.channel_data["ut.chget_freq_start"] == pytest.approx([1_000_000_000.0])
 
@@ -65,8 +66,8 @@ def test_nanovna_get_f_raises_on_empty_reply() -> None:
                 driver.get_f()
 
 
-def test_instro_vna_execute_command_programs_driver_setter(vna: InstroVNA) -> None:
-    vna._execute_command(driver_method=vna.driver.set_freq_start, value=1_500_000_000.0, channel=1)
+def test_instro_vna_set_freq_start_programs_driver_setter(vna: InstroVNA) -> None:
+    vna.set_freq_start(1_500_000_000.0, ch=1)
 
     assert vna.driver.get_freq_start() == 1_500_000_000.0
 

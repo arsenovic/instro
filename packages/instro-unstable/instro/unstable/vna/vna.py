@@ -3,10 +3,8 @@ import logging
 import threading
 import time
 from collections.abc import Sequence
-from functools import wraps
-from numbers import Number
 from pathlib import Path
-from typing import Any, Callable, get_type_hints
+from typing import Any, Callable
 
 import numpy as np
 import skrf  # type: ignore[import-untyped]
@@ -19,16 +17,6 @@ from instro.unstable.vna.storage import DiskStorage, Storage
 from instro.unstable.vna.types import NetworkFileFormat, SweepType
 
 logger = logging.getLogger(__name__)
-
-
-def hint_returns_numeric(func):
-    """Return whether a callable is annotated to return a numeric type.
-
-    This is used to detect measurement getters that expose scalar numeric
-    values, such as ``float`` or ``int`` returns.
-    """
-    t = get_type_hints(func).get("return", None)
-    return isinstance(t, type) and issubclass(t, Number)
 
 
 class VNADriverBase(abc.ABC):
@@ -232,7 +220,7 @@ class InstroVNA(Instrument):
         self,
         driver_method: Callable,
         value: Any,
-        channel: int = 1,
+        channel: int | None = None,
         **kwargs,
     ) -> Command:
         """Execute a driver command method and return a Command for the published value."""
@@ -248,29 +236,76 @@ class InstroVNA(Instrument):
         """The underlying vendor driver."""
         return self._driver
 
-    def __getattr__(self, name: str):
-        """Delegate attribute access to the underlying driver.
+    def get_freq_start(self, ch: int | None = None, **kwargs) -> Measurement | None:
+        """Read the start frequency (Hz) and publish it as a Measurement."""
+        return self._execute_measurement(driver_method=self._driver.get_freq_start, driver_kwargs={"ch": ch}, **kwargs)
 
-        If the attribute on the driver is callable, return a wrapper that
-        acquires the InstroVNA resource lock before calling the driver
-        method. Non-callable attributes are returned directly.
-        """
-        driver = self._driver
-        if hasattr(driver, name):
-            attr = getattr(driver, name)
-            if callable(attr):
-                if name.startswith("get_") and hint_returns_numeric(attr):
+    def get_freq_stop(self, ch: int | None = None, **kwargs) -> Measurement | None:
+        """Read the stop frequency (Hz) and publish it as a Measurement."""
+        return self._execute_measurement(driver_method=self._driver.get_freq_stop, driver_kwargs={"ch": ch}, **kwargs)
 
-                    @wraps(attr)
-                    def _wrapped(**kwargs):
-                        return self._execute_measurement(driver_method=attr, driver_kwargs=kwargs)
-                elif name.startswith("set_"):  # TODO: and set args_are_numeric(attr):
-                    _wrapped = attr  # TODO: wrap set_ methods to execute   commands
-                else:
-                    _wrapped = attr
-                return _wrapped
-            return attr
-        raise AttributeError(f"{type(self).__name__} object has no attribute {name}")
+    def get_freq_span(self, ch: int | None = None, **kwargs) -> Measurement | None:
+        """Read the frequency span (Hz) and publish it as a Measurement."""
+        return self._execute_measurement(driver_method=self._driver.get_freq_span, driver_kwargs={"ch": ch}, **kwargs)
+
+    def get_freq_center(self, ch: int | None = None, **kwargs) -> Measurement | None:
+        """Read the center frequency (Hz) and publish it as a Measurement."""
+        return self._execute_measurement(driver_method=self._driver.get_freq_center, driver_kwargs={"ch": ch}, **kwargs)
+
+    def get_freq_npoints(self, ch: int | None = None, **kwargs) -> Measurement | None:
+        """Read the number of sweep points and publish it as a Measurement."""
+        return self._execute_measurement(
+            driver_method=self._driver.get_freq_npoints, driver_kwargs={"ch": ch}, **kwargs
+        )
+
+    def get_nports(self, ch: int | None = None, **kwargs) -> Measurement | None:
+        """Read the number of ports and publish it as a Measurement."""
+        return self._execute_measurement(driver_method=self._driver.get_nports, driver_kwargs={"ch": ch}, **kwargs)
+
+    def set_freq_start(self, freq: float, ch: int | None = None, **kwargs) -> Command:
+        """Set the start frequency (Hz) and publish it as a Command."""
+        return self._execute_command(driver_method=self._driver.set_freq_start, value=freq, channel=ch, **kwargs)
+
+    def set_freq_stop(self, freq: float, ch: int | None = None, **kwargs) -> Command:
+        """Set the stop frequency (Hz) and publish it as a Command."""
+        return self._execute_command(driver_method=self._driver.set_freq_stop, value=freq, channel=ch, **kwargs)
+
+    def set_freq_span(self, freq: float, ch: int | None = None, **kwargs) -> Command:
+        """Set the frequency span (Hz) and publish it as a Command."""
+        return self._execute_command(driver_method=self._driver.set_freq_span, value=freq, channel=ch, **kwargs)
+
+    def set_freq_center(self, freq: float, ch: int | None = None, **kwargs) -> Command:
+        """Set the center frequency (Hz) and publish it as a Command."""
+        return self._execute_command(driver_method=self._driver.set_freq_center, value=freq, channel=ch, **kwargs)
+
+    def set_freq_npoints(self, npoints: int, ch: int | None = None, **kwargs) -> Command:
+        """Set the number of sweep points and publish it as a Command."""
+        return self._execute_command(driver_method=self._driver.set_freq_npoints, value=npoints, channel=ch, **kwargs)
+
+    def get_frequency(
+        self,
+        ch: int | None = None,
+        unit: str = "hz",
+        sweep_type: SweepType | str = SweepType.LIN,
+    ) -> skrf.Frequency:
+        """Get the sweep axis as an ``skrf.Frequency`` under the resource lock."""
+        with self._resource_lock:
+            return self._driver.get_frequency(ch=ch, unit=unit, sweep_type=sweep_type)
+
+    def set_frequency(self, freq: skrf.Frequency, ch: int | None = None) -> None:
+        """Program the sweep axis from an ``skrf.Frequency`` under the resource lock."""
+        with self._resource_lock:
+            self._driver.set_frequency(freq, ch=ch)
+
+    def get_network(self, ports: Sequence[int] | None = None, ch: int | None = None, **kw) -> skrf.Network:
+        """Get an ``skrf.Network`` of the measured S-parameters under the resource lock."""
+        with self._resource_lock:
+            return self._driver.get_network(ports=ports, ch=ch, **kw)
+
+    def get_s(self, m: int, n: int, ch: int | None = None, **kw) -> skrf.Network:
+        """Get a single S-parameter (0-based row m, column n) as a one-port network under the resource lock."""
+        with self._resource_lock:
+            return self._driver.get_s(m, n, ch=ch, **kw)
 
     def save_network(
         self,
