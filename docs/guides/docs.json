@@ -131,7 +131,8 @@
               "instrumentation/examples/daq/daq_multi_rate_ni",
               "instrumentation/examples/daq/daq_hw_and_sw_timed_ni",
               "instrumentation/examples/daq/daq_read_analog_sw_timed_no_background",
-              "instrumentation/examples/daq/daq_write_batch_continuous_ni"
+              "instrumentation/examples/daq/daq_write_batch_continuous_ni",
+              "instrumentation/examples/daq/daq_sine_wave_dac0_t4"
             ]
           },
           {
@@ -209,6 +210,12 @@
             "pages": [
               "instrumentation/examples/scope/scope_background",
               "instrumentation/examples/scope/scope_basic"
+            ]
+          },
+          {
+            "group": "Vna",
+            "pages": [
+              "instrumentation/examples/vna/vna"
             ]
           },
           {
