@@ -1,5 +1,4 @@
 import time
-from collections.abc import Sequence
 
 import numpy as np
 import serial
@@ -9,7 +8,7 @@ from instro.unstable.vna.vna import VNADriverBase
 
 
 class NanoVNAv2Clone(VNADriverBase):
-    def __init__(self, port="/dev/ttyACM0", baudrate=9600, timeout=3.0):
+    def __init__(self, port: str = "/dev/ttyACM0", baudrate: int = 9600, timeout: float = 3.0) -> None:
         """Initializes serial connection to the text-based NanoVNA firmware."""
         self.port = port
         self.baudrate = baudrate
@@ -23,7 +22,7 @@ class NanoVNAv2Clone(VNADriverBase):
             raise InstroError("NanoVNA serial port is not open")
         return self.ser
 
-    def open(self):
+    def open(self) -> None:
         """Opens the serial port interface."""
         self.ser = serial.Serial(
             port=self.port,
@@ -38,13 +37,13 @@ class NanoVNAv2Clone(VNADriverBase):
         self.ser.reset_output_buffer()
         self._is_open = True
 
-    def close(self):
+    def close(self) -> None:
         """Closes the serial port interface safely."""
         if self.ser and self.ser.is_open:
             self.ser.close()
         self._is_open = False
 
-    def _send_command(self, cmd_string):
+    def _send_command(self, cmd_string: str) -> None:
         """Sends an ASCII text command and flushes buffers."""
         ser = self._require_open()
         full_cmd = f"{cmd_string}\r\n".encode("ascii")
@@ -52,10 +51,10 @@ class NanoVNAv2Clone(VNADriverBase):
         ser.flush()
         time.sleep(0.1)  # Small processing delay for the VNA micro-controller
 
-    def _read_lines(self):
+    def _read_lines(self) -> list[str]:
         """Reads back incoming lines until the trailing prompt or timeout occurs."""
         ser = self._require_open()
-        lines = []
+        lines: list[str] = []
         start_time = time.time()
         while (time.time() - start_time) < self.timeout:
             if ser.in_waiting > 0:
@@ -77,7 +76,7 @@ class NanoVNAv2Clone(VNADriverBase):
     def get_freq_npoints(self, ch: int | None = None) -> int:
         return len(self.get_f())
 
-    def get_f(self):
+    def get_f(self) -> np.ndarray:
         """Queries the device for the active sweep frequencies."""
         self._require_open().reset_input_buffer()
         self._send_command("frequencies")
@@ -102,7 +101,7 @@ class NanoVNAv2Clone(VNADriverBase):
         """Get the number of ports of the VNA."""
         return self._nports  # NanoVNA v1 has 2 ports
 
-    def get_channel_data(self, array_index=0):
+    def get_channel_data(self, array_index: int = 0) -> np.ndarray:
         """Fetches raw S-parameter values (array 0 = S11, array 1 = S21)."""
         self._require_open().reset_input_buffer()
         self._send_command(f"data {array_index}")
@@ -124,10 +123,7 @@ class NanoVNAv2Clone(VNADriverBase):
 
         return np.array(complex_data)
 
-    def set_frequency(self, freq, ch=None):
-        raise NotImplementedError()
-
-    def get_smat(self, m, n, ch=None):
+    def get_smat(self, m: int, n: int, ch: int | None = None) -> np.ndarray:
         if (m, n) == (0, 0):
             return self.get_channel_data(array_index=0)
         elif (m, n) == (1, 0):
