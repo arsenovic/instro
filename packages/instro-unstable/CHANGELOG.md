@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.8.0](https://github.com/nominal-io/instro/compare/instro-unstable-v1.7.0...instro-unstable-v1.8.0) (2026-08-31)
+
+
+### Features
+
+* **awg:** add burst to Keysight 33521B driver ([#405](https://github.com/nominal-io/instro/issues/405)) ([bc38a6b](https://github.com/nominal-io/instro/commit/bc38a6b183904c00718d92b8f407dda031fa6e43))
+* **awg:** add sweep to Keysight 33521B driver ([#410](https://github.com/nominal-io/instro/issues/410)) ([a55974c](https://github.com/nominal-io/instro/commit/a55974c1cbecc561e721440556dc2031dd3d0faa))
+* **awg:** use bulk download for small LAN waveforms ([#432](https://github.com/nominal-io/instro/issues/432)) ([bde7b1e](https://github.com/nominal-io/instro/commit/bde7b1ee24a9ef77b0c1332a3d4700c8185dbef2))
+* publish categorical instrument reads as Measurement ([#445](https://github.com/nominal-io/instro/issues/445)) ([6ccce83](https://github.com/nominal-io/instro/commit/6ccce834b59f67753c192374c4154d0901d8bb3a))
+
+## [1.7.0](https://github.com/nominal-io/instro/compare/instro-unstable-v1.6.0...instro-unstable-v1.7.0) (2026-08-21)
+
+
+### Features
+
+* **awg:** add sweep to Rigol DG1022Z driver ([#412](https://github.com/nominal-io/instro/issues/412)) ([bd18a1b](https://github.com/nominal-io/instro/commit/bd18a1b454cc91d7327808405c1700f2f811268a))
+
+## [1.6.0](https://github.com/nominal-io/instro/compare/instro-unstable-v1.5.0...instro-unstable-v1.6.0) (2026-08-21)
+
+
+### Features
+
+* **awg:** add keysight 33500b awg driver ([#359](https://github.com/nominal-io/instro/issues/359)) ([4d36ade](https://github.com/nominal-io/instro/commit/4d36ade00313184e8aa202bd3a58e88cd3ec2393))
+* **awg:** add sweep functions to AWG base ([#388](https://github.com/nominal-io/instro/issues/388)) ([2b6227a](https://github.com/nominal-io/instro/commit/2b6227ac07ff3ac6f2a1538a750a8b5fb65dc58e))
+* **unstable:** add a shared CAN transport on TransportBase ([#396](https://github.com/nominal-io/instro/issues/396)) ([18da653](https://github.com/nominal-io/instro/commit/18da653ae41097b7f930e11d3ac3145d670a7691))
+
+## [1.5.0](https://github.com/nominal-io/instro/compare/instro-unstable-v1.4.1...instro-unstable-v1.5.0) (2026-08-13)
+
+
+### Features
+
+* **awg:** add burst to awg ([#367](https://github.com/nominal-io/instro/issues/367)) ([27fea81](https://github.com/nominal-io/instro/commit/27fea81239be095b97a8e54093a781c029263316))
+
 ## [1.4.1](https://github.com/nominal-io/instro/compare/instro-unstable-v1.4.0...instro-unstable-v1.4.1) (2026-08-10)
 
 

@@ -2,11 +2,12 @@
 
 from instro.lib.transports.modbus import (
     DataType,
-    ModbusDriver,
+    ModbusRTUTransport,
+    ModbusTCPTransport,
+    ModbusTransport,
     RegisterType,
-    RTUConnection,
-    TCPConnection,
 )
+from instro.lib.transports.transport_base import TransportBase
 from instro.lib.transports.visa import (
     ControlFlow,
     Parity,
@@ -21,15 +22,16 @@ from instro.lib.transports.visa import (
 __all__ = [
     "ControlFlow",
     "DataType",
-    "ModbusDriver",
+    "ModbusRTUTransport",
+    "ModbusTCPTransport",
+    "ModbusTransport",
     "Parity",
-    "RTUConnection",
     "RegisterType",
     "SerialConfig",
     "StopBits",
-    "TCPConnection",
     "TerminatorConfig",
     "TimeoutConfig",
+    "TransportBase",
     "VisaConfig",
     "VisaDriver",
 ]

@@ -10,21 +10,32 @@ from instro.unstable.awg.drivers import RigolDG1022Z
 from instro.unstable.awg.types import (
     AmplitudeMeasurementUnit,
     Arbitrary,
+    BurstTriggerSource,
+    BurstType,
+    GatePolarity,
     ModulationType,
     Pulse,
     Sawtooth,
     Sine,
     Square,
     StaticValue,
+    SweepTriggerSource,
+    SweepType,
     Triangle,
     Waveform,
 )
 
 _ARB_SAMPLES = (0.0, 0.5, 1.0, -1.0, 0.25, -0.25, 0.75, -0.75, 0.125)
+_OVERSIZED_ARB_SAMPLES = (-0.12345678901234568,) * 1600
 
 _SINE_CARRIER_APPL_RESPONSE = '"SIN,1.000000E+03,5.000000E+00,0.000000E+00,0.000000E+00"'
 _PULSE_CARRIER_APPL_RESPONSE = '"PULSE,1.000000E+03,1.000000E+00,0.000000E+00,0.000000E+00"'
 _ARBITRARY_CARRIER_APPL_RESPONSE = '"USER,1.000000E+03,1.000000E+00,0.000000E+00,0.000000E+00"'
+_DC_CARRIER_APPL_RESPONSE = '"DC,DEF,DEF,1.500000E+00"'
+
+_SINE_CARRIER_FUNC_RESPONSE = "SIN"
+_ARBITRARY_CARRIER_FUNC_RESPONSE = "USER"
+_DC_CARRIER_FUNC_RESPONSE = "DC"
 
 _NO_ERROR = '0,"No error"'
 
@@ -210,11 +221,26 @@ def test_06_set_waveform_rejects_invalid_input(
     rigol_visa.write.assert_not_called()
 
 
-def test_07_set_waveform_arbitrary_writes_points_individually(
+def test_07_set_waveform_arbitrary_uses_bulk_download_for_small_lan_payload(
     rigol: RigolDG1022Z,
     rigol_visa: MagicMock,
 ) -> None:
     rigol_visa.query.return_value = '0,"No error"'
+
+    rigol.set_waveform(1, Arbitrary(samples=_ARB_SAMPLES, sample_rate_hz=1000000.0))
+
+    assert rigol_visa.write.call_args_list == [
+        call(":SOUR1:APPL:ARB 1000000.0"),
+        call(":SOUR1:TRAC:DATA VOLATILE,0.0,0.5,1.0,-1.0,0.25,-0.25,0.75,-0.75,0.125"),
+    ]
+    assert rigol_visa.query.call_count == 2
+
+
+def test_set_waveform_arbitrary_uses_per_point_download_for_usb(
+    rigol_visa_cls: MagicMock,
+    rigol_visa: MagicMock,
+) -> None:
+    rigol = RigolDG1022Z("USB0::0x1AB1::0x0642::DG1ZA000000000::INSTR")
 
     rigol.set_waveform(1, Arbitrary(samples=_ARB_SAMPLES, sample_rate_hz=1000000.0))
 
@@ -232,6 +258,22 @@ def test_07_set_waveform_arbitrary_writes_points_individually(
         call(":SOUR1:TRAC:DATA:VAL VOLATILE,9,9215"),
     ]
     assert rigol_visa.query.call_count == 11
+
+
+def test_set_waveform_arbitrary_uses_per_point_download_for_oversized_lan_payload(
+    rigol: RigolDG1022Z,
+    rigol_visa: MagicMock,
+) -> None:
+    rigol.set_waveform(1, Arbitrary(samples=_OVERSIZED_ARB_SAMPLES, sample_rate_hz=1000000.0))
+
+    commands = rigol_visa.write.call_args_list
+    assert commands[:2] == [
+        call(":SOUR1:APPL:ARB 1000000.0"),
+        call(":SOUR1:TRAC:DATA:POIN VOLATILE,1600"),
+    ]
+    assert len(commands) == 1602
+    assert all(":TRAC:DATA VOLATILE," not in command.args[0] for command in commands)
+    assert rigol_visa.query.call_count == 1602
 
 
 @pytest.mark.parametrize("num_points", [2, 16385], ids=["too_few", "too_many"])
@@ -608,3 +650,486 @@ def test_23_get_modulation_type_raises_on_unexpected_instrument_response(
 
     with pytest.raises(ValueError, match="'XYZ' is not a valid ModulationType"):
         rigol.get_modulation_type(1)
+
+
+# ---------------------------------------------------------------------------
+# Burst
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("burst_type", "expected_mode"),
+    [(BurstType.NCYCLE, "TRIG"), (BurstType.GATED, "GAT"), (BurstType.INFINITE, "INF")],
+    ids=["ncycle", "gated", "infinite"],
+)
+def test_24_set_burst_writes_mode_for_each_burst_type(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock, burst_type: BurstType, expected_mode: str
+) -> None:
+    _query_sequence(rigol_visa, [_SINE_CARRIER_APPL_RESPONSE])
+
+    rigol.set_burst(1, burst_type)
+
+    rigol_visa.write.assert_called_once_with(f":SOUR1:BURS:MODE {expected_mode}")
+
+
+@pytest.mark.parametrize(
+    ("channel", "burst_type", "carrier_response", "match"),
+    [
+        (3, BurstType.NCYCLE, _SINE_CARRIER_APPL_RESPONSE, "channel must be 1 or 2"),
+        (1, "NCYCLE", _SINE_CARRIER_APPL_RESPONSE, "burst_type must be a BurstType"),
+        (1, BurstType.NCYCLE, _DC_CARRIER_APPL_RESPONSE, "cannot burst a StaticValue"),
+    ],
+    ids=["invalid_channel", "invalid_burst_type", "staticvalue_carrier"],
+)
+def test_25_set_burst_rejects_invalid_input(
+    rigol: RigolDG1022Z,
+    rigol_visa: MagicMock,
+    channel: int,
+    burst_type: BurstType,
+    carrier_response: str,
+    match: str,
+) -> None:
+    _query_sequence(rigol_visa, [carrier_response])
+
+    with pytest.raises((ValueError, TypeError), match=match):
+        rigol.set_burst(channel, burst_type)
+
+    rigol_visa.write.assert_not_called()
+
+
+def test_26_burst_enable_writes_burs_stat_and_get_burst_state_parses_it(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock
+) -> None:
+    rigol.burst_enable(1, True)
+    rigol.burst_enable(1, False)
+    assert rigol_visa.write.call_args_list == [call(":SOUR1:BURS:STAT ON"), call(":SOUR1:BURS:STAT OFF")]
+
+    _query_sequence(rigol_visa, ["ON\n"])
+    assert rigol.get_burst_state(1) is True
+
+    _query_sequence(rigol_visa, ["OFF\n"])
+    assert rigol.get_burst_state(1) is False
+
+
+def test_27_get_burst_type_parses_every_mode_and_rejects_unknown(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    _query_sequence(rigol_visa, ["TRIG"])
+    assert rigol.get_burst_type(1) is BurstType.NCYCLE
+
+    _query_sequence(rigol_visa, ["GAT"])
+    assert rigol.get_burst_type(1) is BurstType.GATED
+
+    _query_sequence(rigol_visa, ["INF"])
+    assert rigol.get_burst_type(1) is BurstType.INFINITE
+
+    _query_sequence(rigol_visa, ["NOIS"])
+    with pytest.raises(ValueError, match="unsupported burst mode 'NOIS'"):
+        rigol.get_burst_type(1)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [BurstTriggerSource.INTERNAL, BurstTriggerSource.EXTERNAL, BurstTriggerSource.MANUAL],
+    ids=["internal", "external", "manual"],
+)
+def test_28_set_burst_trigger_writes_source(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock, source: BurstTriggerSource
+) -> None:
+    _query_sequence(rigol_visa, ["TRIG"])
+
+    rigol.set_burst_trigger(1, source)
+
+    rigol_visa.write.assert_called_once_with(f":SOUR1:BURS:TRIG:SOUR {source.value}")
+
+
+def test_29_set_burst_trigger_rejects_gated_mode_without_writing(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    """Regression guard: :BURS:TRIG:SOUR is rejected (-220) once :BURS:MODE GAT is set; don't even attempt it."""
+    _query_sequence(rigol_visa, ["GAT"])
+
+    with pytest.raises(ValueError, match="GATED burst mode"):
+        rigol.set_burst_trigger(1, BurstTriggerSource.EXTERNAL)
+
+    rigol_visa.write.assert_not_called()
+
+
+def test_30_set_burst_trigger_rejects_internal_source_during_infinite_mode_without_writing(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock
+) -> None:
+    """Regression guard: INTERNAL trigger during INFINITE burst is rejected (-220) on the bench; don't attempt it."""
+    _query_sequence(rigol_visa, ["INF"])
+
+    with pytest.raises(ValueError, match="INFINITE burst mode"):
+        rigol.set_burst_trigger(1, BurstTriggerSource.INTERNAL)
+
+    rigol_visa.write.assert_not_called()
+
+
+def test_31_set_burst_trigger_rejects_invalid_source_and_channel(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    with pytest.raises(TypeError, match="source must be a BurstTriggerSource"):
+        rigol.set_burst_trigger(1, "INT")  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="channel must be 1 or 2"):
+        rigol.set_burst_trigger(3, BurstTriggerSource.INTERNAL)
+
+    rigol_visa.write.assert_not_called()
+
+
+def test_32_burst_delay_roundtrip_writes_and_parses(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    rigol.set_burst_delay(2, 0.5)
+    rigol_visa.write.assert_called_once_with(":SOUR2:BURS:TDEL 0.5")
+
+    _query_sequence(rigol_visa, ["5.000000E-01"])
+    assert rigol.get_burst_delay(2) == pytest.approx(0.5)
+    assert _real_query_calls(rigol_visa) == [call(":SOUR2:BURS:TDEL?")]
+
+
+def test_33_set_burst_delay_rejects_negative_value_and_invalid_channel(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock
+) -> None:
+    with pytest.raises(ValueError, match="delay_s must be non-negative"):
+        rigol.set_burst_delay(1, -0.1)
+
+    with pytest.raises(ValueError, match="channel must be 1 or 2"):
+        rigol.set_burst_delay(3, 0.1)
+
+    rigol_visa.write.assert_not_called()
+
+
+@pytest.mark.parametrize("gate_polarity", [GatePolarity.NORM, GatePolarity.INV], ids=["norm", "inv"])
+def test_34_burst_gate_polarity_roundtrip_writes_and_parses(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock, gate_polarity: GatePolarity
+) -> None:
+    rigol.set_burst_gate_polarity(1, gate_polarity)
+    rigol_visa.write.assert_called_once_with(f":SOUR1:BURS:GATE:POL {gate_polarity.value}")
+
+    _query_sequence(rigol_visa, [gate_polarity.value])
+    assert rigol.get_burst_gate_polarity(1) is gate_polarity
+
+
+def test_35_set_burst_gate_polarity_rejects_invalid_type_and_channel(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock
+) -> None:
+    with pytest.raises(TypeError, match="gate_polarity must be a GatePolarity"):
+        rigol.set_burst_gate_polarity(1, "NORM")  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="channel must be 1 or 2"):
+        rigol.set_burst_gate_polarity(3, GatePolarity.NORM)
+
+    rigol_visa.write.assert_not_called()
+
+
+def test_36_burst_ncycles_roundtrip_writes_and_parses(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    rigol.set_burst_ncycles(1, 10)
+    rigol_visa.write.assert_called_once_with(":SOUR1:BURS:NCYC 10")
+
+    _query_sequence(rigol_visa, ["1.000000E+01"])
+    assert rigol.get_burst_ncycles(1) == 10
+
+
+def test_37_set_burst_ncycles_rejects_non_positive_value_and_invalid_channel(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock
+) -> None:
+    with pytest.raises(ValueError, match="n_cycles must be >= 1"):
+        rigol.set_burst_ncycles(1, 0)
+
+    with pytest.raises(ValueError, match="channel must be 1 or 2"):
+        rigol.set_burst_ncycles(3, 10)
+
+    rigol_visa.write.assert_not_called()
+
+
+def test_38_burst_period_roundtrip_writes_and_parses(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    rigol.set_burst_period(1, 0.25)
+    rigol_visa.write.assert_called_once_with(":SOUR1:BURS:INT:PER 0.25")
+
+    _query_sequence(rigol_visa, ["2.500000E-01"])
+    assert rigol.get_burst_period(1) == pytest.approx(0.25)
+
+
+def test_39_set_burst_period_rejects_non_positive_value_and_invalid_channel(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock
+) -> None:
+    with pytest.raises(ValueError, match="period must be positive"):
+        rigol.set_burst_period(1, 0.0)
+
+    with pytest.raises(ValueError, match="channel must be 1 or 2"):
+        rigol.set_burst_period(3, 0.1)
+
+    rigol_visa.write.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "source",
+    [BurstTriggerSource.INTERNAL, BurstTriggerSource.EXTERNAL, BurstTriggerSource.MANUAL],
+    ids=["internal", "external", "manual"],
+)
+def test_40_get_burst_trigger_parses_every_source(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock, source: BurstTriggerSource
+) -> None:
+    _query_sequence(rigol_visa, [source.value])
+
+    assert rigol.get_burst_trigger(1) is source
+    assert _real_query_calls(rigol_visa) == [call(":SOUR1:BURS:TRIG:SOUR?")]
+
+
+def test_41_get_burst_trigger_rejects_invalid_channel(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    with pytest.raises(ValueError, match="channel must be 1 or 2"):
+        rigol.get_burst_trigger(3)
+
+    rigol_visa.query.assert_not_called()
+
+
+def test_42_fire_burst_trigger_fires_when_source_already_manual(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    """Regression guard: :BURS:TRIG:IMM is rejected (-220) on the bench; only :BURS:TRIG is accepted."""
+    _query_sequence(rigol_visa, ["ON", "MAN"])
+
+    rigol.fire_burst_trigger(1)
+
+    assert _real_query_calls(rigol_visa) == [call(":SOUR1:BURS:STAT?"), call(":SOUR1:BURS:TRIG:SOUR?")]
+    assert rigol_visa.write.call_args_list == [call(":SOUR1:BURS:TRIG")]
+
+
+def test_43_fire_burst_trigger_rejects_non_manual_source_and_invalid_channel(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock
+) -> None:
+    _query_sequence(rigol_visa, ["ON", "EXT"])
+
+    with pytest.raises(ValueError, match="already MANUAL"):
+        rigol.fire_burst_trigger(1)
+
+    with pytest.raises(ValueError, match="channel must be 1 or 2"):
+        rigol.fire_burst_trigger(3)
+
+    rigol_visa.write.assert_not_called()
+
+
+def test_44_fire_burst_trigger_rejects_when_burst_not_enabled(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    """Regression guard: firing before burst_enable(channel, True) is rejected (-220) on the bench."""
+    _query_sequence(rigol_visa, ["OFF"])
+
+    with pytest.raises(ValueError, match="burst mode is already"):
+        rigol.fire_burst_trigger(1)
+
+    assert _real_query_calls(rigol_visa) == [call(":SOUR1:BURS:STAT?")]
+    rigol_visa.write.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Sweep
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("sweep_type", "expected_command"),
+    [
+        (SweepType.LINEAR, ":SOUR1:SWE:SPAC LINEAR"),
+        (SweepType.LOG, ":SOUR1:SWE:SPAC LOG"),
+        (SweepType.STEP, ":SOUR1:SWE:SPAC STEP"),
+    ],
+    ids=["linear", "log", "step"],
+)
+def test_45_set_sweep_writes_spacing_command(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock, sweep_type: SweepType, expected_command: str
+) -> None:
+    _query_sequence(rigol_visa, [_SINE_CARRIER_FUNC_RESPONSE])
+
+    rigol.set_sweep(1, sweep_type)
+
+    rigol_visa.write.assert_called_once_with(expected_command)
+
+
+@pytest.mark.parametrize(
+    ("channel", "carrier_response", "match"),
+    [
+        (3, _SINE_CARRIER_FUNC_RESPONSE, "channel must be 1 or 2"),
+        (1, _DC_CARRIER_FUNC_RESPONSE, "cannot sweep a StaticValue"),
+    ],
+    ids=["invalid_channel", "staticvalue_carrier"],
+)
+def test_46_set_sweep_rejects_invalid_input(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock, channel: int, carrier_response: str, match: str
+) -> None:
+    _query_sequence(rigol_visa, [carrier_response])
+
+    with pytest.raises(ValueError, match=match):
+        rigol.set_sweep(channel, SweepType.LINEAR)
+
+    rigol_visa.write.assert_not_called()
+    if channel == 1:
+        # the StaticValue check must come from :FUNC?, not from get_waveform()'s :APPL? path
+        assert _real_query_calls(rigol_visa) == [call(":SOUR1:FUNC?")]
+
+
+def test_47_set_sweep_rejects_invalid_type(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    with pytest.raises(TypeError, match="sweep_type must be a SweepType"):
+        rigol.set_sweep(1, "LINEAR")  # type: ignore[arg-type]
+
+    rigol_visa.write.assert_not_called()
+    rigol_visa.query.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("response", "expected"),
+    [
+        ("LIN", SweepType.LINEAR),
+        ("LOG", SweepType.LOG),
+        ("STE", SweepType.STEP),
+    ],
+    ids=["linear", "log", "step"],
+)
+def test_48_get_sweep_type_parses_abbreviated_readback(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock, response: str, expected: SweepType
+) -> None:
+    """The DG1000Z always echoes the abbreviated mnemonic (LIN/LOG/STE), never the full keyword written."""
+    _query_sequence(rigol_visa, [response])
+
+    assert rigol.get_sweep_type(2) is expected
+    assert _real_query_calls(rigol_visa) == [call(":SOUR2:SWE:SPAC?")]
+
+
+def test_49_get_sweep_type_raises_on_unexpected_instrument_response(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    _query_sequence(rigol_visa, ["XYZ"])
+
+    with pytest.raises(ValueError, match="unsupported sweep type 'XYZ'"):
+        rigol.get_sweep_type(1)
+
+
+def test_50_sweep_enable_and_get_sweep_state_roundtrip(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    rigol.sweep_enable(1, True)
+    rigol.sweep_enable(1, False)
+    assert rigol_visa.write.call_args_list == [call(":SOUR1:SWE:STAT ON"), call(":SOUR1:SWE:STAT OFF")]
+
+    _query_sequence(rigol_visa, ["ON\n"])
+    assert rigol.get_sweep_state(1) is True
+
+    _query_sequence(rigol_visa, ["OFF\n"])
+    assert rigol.get_sweep_state(1) is False
+
+
+@pytest.mark.parametrize(
+    "source",
+    [SweepTriggerSource.INTERNAL, SweepTriggerSource.EXTERNAL, SweepTriggerSource.MANUAL],
+    ids=["internal", "external", "manual"],
+)
+def test_51_set_sweep_trigger_writes_source(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock, source: SweepTriggerSource
+) -> None:
+    rigol.set_sweep_trigger(1, source)
+
+    rigol_visa.write.assert_called_once_with(f":SOUR1:SWE:TRIG:SOUR {source.value}")
+
+
+def test_52_set_sweep_trigger_rejects_invalid_source_and_channel(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    with pytest.raises(TypeError, match="source must be a SweepTriggerSource"):
+        rigol.set_sweep_trigger(1, "INT")  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="channel must be 1 or 2"):
+        rigol.set_sweep_trigger(3, SweepTriggerSource.INTERNAL)
+
+    rigol_visa.write.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "source",
+    [SweepTriggerSource.INTERNAL, SweepTriggerSource.EXTERNAL, SweepTriggerSource.MANUAL],
+    ids=["internal", "external", "manual"],
+)
+def test_53_get_sweep_trigger_parses_every_source(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock, source: SweepTriggerSource
+) -> None:
+    _query_sequence(rigol_visa, [source.value])
+
+    assert rigol.get_sweep_trigger(1) is source
+    assert _real_query_calls(rigol_visa) == [call(":SOUR1:SWE:TRIG:SOUR?")]
+
+
+def test_54_get_sweep_trigger_rejects_invalid_channel(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    with pytest.raises(ValueError, match="channel must be 1 or 2"):
+        rigol.get_sweep_trigger(3)
+
+    rigol_visa.query.assert_not_called()
+
+
+def test_55_sweep_frequency_bounds_roundtrip(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    rigol.set_sweep_start_freq(1, 100.0)
+    rigol.set_sweep_end_freq(1, 900.0)
+    assert rigol_visa.write.call_args_list == [call(":SOUR1:FREQ:STAR 100.0"), call(":SOUR1:FREQ:STOP 900.0")]
+
+    _query_sequence(rigol_visa, ["1.000000E+02", "9.000000E+02"])
+    assert rigol.get_sweep_start_freq(1) == pytest.approx(100.0)
+    assert rigol.get_sweep_end_freq(1) == pytest.approx(900.0)
+    assert _real_query_calls(rigol_visa) == [call(":SOUR1:FREQ:STAR?"), call(":SOUR1:FREQ:STOP?")]
+
+
+def test_56_sweep_timing_roundtrip(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    rigol.set_sweep_time(2, 5.0)
+    rigol.set_sweep_start_hold_time(2, 1.0)
+    rigol.set_sweep_stop_hold_time(2, 1.5)
+    rigol.set_sweep_return_time(2, 0.5)
+    assert rigol_visa.write.call_args_list == [
+        call(":SOUR2:SWE:TIME 5.0"),
+        call(":SOUR2:SWE:HTIM:STAR 1.0"),
+        call(":SOUR2:SWE:HTIM 1.5"),
+        call(":SOUR2:SWE:RTIM 0.5"),
+    ]
+
+    _query_sequence(rigol_visa, ["5.000000E+00", "1.000000E+00", "1.500000E+00", "5.000000E-01"])
+    assert rigol.get_sweep_time(2) == pytest.approx(5.0)
+    assert rigol.get_sweep_start_hold_time(2) == pytest.approx(1.0)
+    assert rigol.get_sweep_stop_hold_time(2) == pytest.approx(1.5)
+    assert rigol.get_sweep_return_time(2) == pytest.approx(0.5)
+    assert _real_query_calls(rigol_visa) == [
+        call(":SOUR2:SWE:TIME?"),
+        call(":SOUR2:SWE:HTIM:STAR?"),
+        call(":SOUR2:SWE:HTIM?"),
+        call(":SOUR2:SWE:RTIM?"),
+    ]
+
+
+def test_57_fire_sweep_trigger_fires_when_source_already_manual(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    _query_sequence(rigol_visa, ["ON", "MAN"])
+
+    rigol.fire_sweep_trigger(1)
+
+    assert _real_query_calls(rigol_visa) == [call(":SOUR1:SWE:STAT?"), call(":SOUR1:SWE:TRIG:SOUR?")]
+    assert rigol_visa.write.call_args_list == [call(":SOUR1:SWE:TRIG")]
+
+
+def test_58_fire_sweep_trigger_rejects_non_manual_source_and_invalid_channel(
+    rigol: RigolDG1022Z, rigol_visa: MagicMock
+) -> None:
+    _query_sequence(rigol_visa, ["ON", "EXT"])
+
+    with pytest.raises(ValueError, match="already MANUAL"):
+        rigol.fire_sweep_trigger(1)
+
+    with pytest.raises(ValueError, match="channel must be 1 or 2"):
+        rigol.fire_sweep_trigger(3)
+
+    rigol_visa.write.assert_not_called()
+
+
+def test_59_fire_sweep_trigger_rejects_when_sweep_not_enabled(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    _query_sequence(rigol_visa, ["OFF"])
+
+    with pytest.raises(ValueError, match="sweep mode is already"):
+        rigol.fire_sweep_trigger(1)
+
+    assert _real_query_calls(rigol_visa) == [call(":SOUR1:SWE:STAT?")]
+    rigol_visa.write.assert_not_called()
+
+
+def test_60_set_sweep_succeeds_on_untracked_arbitrary_carrier(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    # get_waveform() would raise RuntimeError on an untracked USER waveform (e.g. a preset sinc); set_sweep()
+    # must check the carrier via :FUNC? instead, so it isn't blocked by waveforms this driver never downloaded.
+    _query_sequence(rigol_visa, [_ARBITRARY_CARRIER_FUNC_RESPONSE])
+
+    rigol.set_sweep(1, SweepType.LINEAR)
+
+    rigol_visa.write.assert_called_once_with(":SOUR1:SWE:SPAC LINEAR")
+
+
+def test_61_set_sweep_start_freq_forwards_negative_value(rigol: RigolDG1022Z, rigol_visa: MagicMock) -> None:
+    # No client-side range check: the driver defers frequency validation to the instrument's error queue.
+    rigol.set_sweep_start_freq(1, -100.0)
+
+    rigol_visa.write.assert_called_once_with(":SOUR1:FREQ:STAR -100.0")

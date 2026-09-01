@@ -11,11 +11,12 @@ description: Using InstroAWG for SCPI-based arbitrary waveform generators
 `InstroAWG` ships in the `instro-unstable` package. Its API is not settled and may change without notice between releases. Install it with `pip install "instro[unstable]"`. See [Unstable modules](/instrumentation/installation#unstable-modules) for details.
 </Warning>
 
-`InstroAWG` is a hardware abstraction layer (HAL) that provides a unified interface for arbitrary waveform generators. The category class defines the vendor-independent API (`set_waveform`, `set_amplitude`, `set_offset`, `set_modulation`, …). A vendor-specific driver owns its connection details and translates those calls into vendor commands.
+`InstroAWG` is a hardware abstraction layer (HAL) that provides a unified interface for arbitrary waveform generators. The category class defines the vendor-independent API (`set_waveform`, `set_amplitude`, `set_offset`, `set_modulation`, `set_sweep`, …). A vendor-specific driver owns its connection details and translates those calls into vendor commands.
 
 ## Supported Vendors
 
 - **Rigol**: DG1022Z (DG1000Z series) via SCPI/VISA (`RigolDG1022Z`)
+- **Keysight**: 33521B (33500B series) via SCPI/VISA (`Keysight33521B`)
 
 If your vendor or model is not listed, see [Custom Driver Development](#custom-driver-development) below.
 
@@ -52,6 +53,8 @@ InstroAWG supports programming a channel with the following waveforms: `Sine`, `
 
 Certain features are only available on particular waveforms. Driver's own their implementation of features in InstroAWG. Consult your specific driver for exact support.
 </Note>
+
+`RigolDG1022Z` uses a bulk transfer for arbitrary waveforms over TCPIP when the complete command is smaller than 32 KiB. USB connections and larger TCPIP payloads use per-point transfers because bulk writes can hang the instrument firmware in those cases.
 
 ## Creating an InstroAWG Instance
 
@@ -150,13 +153,48 @@ Every measurement/command call produces a channel keyed under `{name}.{descripto
 | `align_phase()` | `phase.align.cmd` | command |
 | `set_modulation(channel=N)` | `ch{N}.modulation.cmd` | command |
 | `modulation_enable(channel=N)` | `ch{N}.modulation_enabled.cmd` | command |
+| `set_burst(channel=N)` | `ch{N}.burst.cmd` | command |
+| `burst_enable(channel=N)` | `ch{N}.burst_enabled.cmd` | command |
+| `set_burst_trigger(channel=N)` | `ch{N}.burst_trigger.cmd` | command |
+| `fire_burst_trigger(channel=N)` | `ch{N}.burst_trigger_forced.cmd` | command |
+| `set_burst_delay(channel=N)` | `ch{N}.burst_delay.cmd` | command |
+| `set_burst_gate_polarity(channel=N)` | `ch{N}.burst_gate_polarity.cmd` | command |
+| `set_burst_ncycles(channel=N)` | `ch{N}.burst_ncycles.cmd` | command |
+| `set_burst_period(channel=N)` | `ch{N}.burst_period.cmd` | command |
+| `set_sweep(channel=N)` | `ch{N}.sweep.cmd` | command |
+| `sweep_enable(channel=N)` | `ch{N}.sweep_enabled.cmd` | command |
+| `set_sweep_trigger(channel=N)` | `ch{N}.sweep_trigger.cmd` | command |
+| `set_sweep_start_freq(channel=N)` | `ch{N}.sweep_start_freq.cmd` | command |
+| `set_sweep_end_freq(channel=N)` | `ch{N}.sweep_end_freq.cmd` | command |
+| `set_sweep_time(channel=N)` | `ch{N}.sweep_time.cmd` | command |
+| `set_sweep_start_hold_time(channel=N)` | `ch{N}.sweep_start_hold_time.cmd` | command |
+| `set_sweep_stop_hold_time(channel=N)` | `ch{N}.sweep_stop_hold_time.cmd` | command |
+| `set_sweep_return_time(channel=N)` | `ch{N}.sweep_return_time.cmd` | command |
+| `fire_sweep_trigger(channel=N)` | `ch{N}.sweep_trigger_forced.cmd` | command |
 | `get_offset(channel=N)` | `ch{N}.offset` | telemetry |
 | `get_output_state(channel=N)` | `ch{N}.enabled` | telemetry |
 | `get_output_load(channel=N)` | `ch{N}.load` | telemetry |
 | `get_modulation_state(channel=N)` | `ch{N}.modulation_enabled` | telemetry |
+| `get_burst_state(channel=N)` | `ch{N}.burst_enabled` | telemetry |
+| `get_burst_delay(channel=N)` | `ch{N}.burst_delay` | telemetry |
+| `get_burst_ncycles(channel=N)` | `ch{N}.burst_ncycles` | telemetry |
+| `get_burst_period(channel=N)` | `ch{N}.burst_period` | telemetry |
+| `get_sweep_state(channel=N)` | `ch{N}.sweep_enabled` | telemetry |
+| `get_sweep_start_freq(channel=N)` | `ch{N}.sweep_start_freq` | telemetry |
+| `get_sweep_end_freq(channel=N)` | `ch{N}.sweep_end_freq` | telemetry |
+| `get_sweep_time(channel=N)` | `ch{N}.sweep_time` | telemetry |
+| `get_sweep_start_hold_time(channel=N)` | `ch{N}.sweep_start_hold_time` | telemetry |
+| `get_sweep_stop_hold_time(channel=N)` | `ch{N}.sweep_stop_hold_time` | telemetry |
+| `get_sweep_return_time(channel=N)` | `ch{N}.sweep_return_time` | telemetry |
+| `get_modulation_type(channel=N)` | `ch{N}.modulation_type` | telemetry |
+| `get_burst_type(channel=N)` | `ch{N}.burst_type` | telemetry |
+| `get_burst_trigger(channel=N)` | `ch{N}.burst_trigger` | telemetry |
+| `get_burst_gate_polarity(channel=N)` | `ch{N}.burst_gate_polarity` | telemetry |
+| `get_sweep_type(channel=N)` | `ch{N}.sweep_type` | telemetry |
+| `get_sweep_trigger(channel=N)` | `ch{N}.sweep_trigger` | telemetry |
 
 <Note>
-`get_waveform()`, `get_amplitude()`, `convert_amplitude()`, and `get_modulation_type()` return a plain Python value (`Waveform`, `tuple[float, AmplitudeMeasurementUnit]`, `float`, `ModulationType`) directly rather than a `Measurement`, and don't publish. Every other readback listed above publishes a `Measurement` on the descriptor shown.
+`get_waveform()`, `get_amplitude()`, and `convert_amplitude()` return a plain Python value (`Waveform`, `tuple[float, AmplitudeMeasurementUnit]`, `float`) directly rather than a `Measurement`, and don't publish. Every other readback listed above publishes a `Measurement` on the descriptor shown.
 </Note>
 
 ## Method Reference
@@ -182,6 +220,40 @@ Every measurement/command call produces a channel keyed under `{name}.{descripto
 | `modulation_enable(channel, enable)` | Enable or disable modulation on channel |
 | `get_modulation_type(channel)` | Read back the modulation type currently active on channel |
 | `get_modulation_state(channel)` | Read back whether modulation is enabled on channel |
+| `set_burst(channel, burst_type)` | Configure a channel's burst type (`NCYCLE`/`GATED`/`INFINITE`) without enabling it |
+| `burst_enable(channel, enable)` | Enable or disable burst mode on channel |
+| `get_burst_type(channel)` | Read back the burst type currently active on channel |
+| `get_burst_state(channel)` | Read back whether burst mode is enabled on channel |
+| `set_burst_trigger(channel, source)` | Set the burst trigger source (`INTERNAL`/`EXTERNAL`/`MANUAL`) on channel |
+| `get_burst_trigger(channel)` | Read back the burst trigger source on channel |
+| `fire_burst_trigger(channel)` | Fire a burst trigger on channel now; the trigger source must already be `MANUAL` |
+| `set_burst_delay(channel, delay_s)` | Set the burst trigger delay in seconds on channel |
+| `get_burst_delay(channel)` | Read back the burst trigger delay in seconds on channel |
+| `set_burst_gate_polarity(channel, gate_polarity)` | Set the gate polarity (`NORM`/`INV`) for GATED bursts on channel |
+| `get_burst_gate_polarity(channel)` | Read back the gate polarity for GATED bursts on channel |
+| `set_burst_ncycles(channel, n_cycles)` | Set the number of cycles per trigger for NCYCLE bursts on channel |
+| `get_burst_ncycles(channel)` | Read back the number of cycles per trigger for NCYCLE bursts on channel |
+| `set_burst_period(channel, period)` | Set the internal burst period in seconds on channel |
+| `get_burst_period(channel)` | Read back the internal burst period in seconds on channel |
+| `set_sweep(channel, sweep_type)` | Configure a channel's sweep type (`LINEAR`/`LOG`/`STEP`) |
+| `get_sweep_type(channel)` | Read back the sweep type currently configured on channel |
+| `sweep_enable(channel, enable)` | Enable or disable sweep mode on channel |
+| `get_sweep_state(channel)` | Read back whether sweep mode is enabled on channel |
+| `set_sweep_trigger(channel, source)` | Set the sweep trigger source (`INTERNAL`/`EXTERNAL`/`MANUAL`) on channel |
+| `get_sweep_trigger(channel)` | Read back the sweep trigger source on channel |
+| `set_sweep_start_freq(channel, frequency_hz)` | Set the sweep start frequency in Hz on a channel |
+| `get_sweep_start_freq(channel)` | Read back the sweep start frequency in Hz on a channel |
+| `set_sweep_end_freq(channel, frequency_hz)` | Set the sweep end frequency in Hz on a channel |
+| `get_sweep_end_freq(channel)` | Read back the sweep end frequency in Hz on a channel |
+| `set_sweep_time(channel, sweep_time)` | Set the sweep time in seconds on a channel |
+| `get_sweep_time(channel)` | Read back the sweep time in seconds on a channel |
+| `set_sweep_start_hold_time(channel, hold_time)` | Set the sweep start hold time in seconds on a channel |
+| `get_sweep_start_hold_time(channel)` | Read back the sweep start hold time in seconds on a channel |
+| `set_sweep_stop_hold_time(channel, hold_time)` | Set the sweep stop hold time in seconds on a channel |
+| `get_sweep_stop_hold_time(channel)` | Read back the sweep stop hold time in seconds on a channel |
+| `set_sweep_return_time(channel, return_time)` | Set the sweep return time in seconds on a channel |
+| `get_sweep_return_time(channel)` | Read back the sweep return time in seconds on a channel |
+| `fire_sweep_trigger(channel)` | Fire a sweep trigger on channel now; the trigger source must already be `MANUAL` |
 | `start()` | Begin background daemon |
 | `stop()` | End background daemon |
 
@@ -260,6 +332,30 @@ Optional overrides (raise `NotImplementedError` if not supported):
 - **`modulation_enable(channel, enable)`**: Enable or disable modulation on channel.
 - **`get_modulation_type(channel)`**: Read back the active modulation type from the instrument.
 - **`get_modulation_state(channel)`**: Read back whether modulation is enabled from the instrument.
+- **`set_burst(channel, burst_type)`** / **`get_burst_type(channel)`**: Configure or read back a channel's burst type (`NCYCLE`/`GATED`/`INFINITE`). Call `burst_enable()` to activate it.
+- **`burst_enable(channel, enable)`** / **`get_burst_state(channel)`**: Enable/disable burst mode, or read back whether it's enabled.
+- **`set_burst_trigger(channel, source)`** / **`get_burst_trigger(channel)`**: Set or read back the burst trigger source (`INTERNAL`/`EXTERNAL`/`MANUAL`).
+- **`fire_burst_trigger(channel)`**: Fire a burst trigger on channel immediately. Requires the trigger source already set to `MANUAL`; call `set_burst_trigger()` first otherwise.
+- **`set_burst_delay(channel, delay_s)`** / **`get_burst_delay(channel)`**: Set or read back the burst trigger delay in seconds.
+- **`set_burst_gate_polarity(channel, gate_polarity)`** / **`get_burst_gate_polarity(channel)`**: Set or read back the gate polarity (`NORM`/`INV`) for GATED bursts.
+- **`set_burst_ncycles(channel, n_cycles)`** / **`get_burst_ncycles(channel)`**: Set or read back the number of cycles per trigger for NCYCLE bursts.
+- **`set_burst_period(channel, period)`** / **`get_burst_period(channel)`**: Set or read back the internal burst period in seconds.
+- **`set_sweep(channel, sweep_type)`** / **`get_sweep_type(channel)`**: Configure or read back a channel's sweep type (`LINEAR`/`LOG`/`STEP`).
+- **`sweep_enable(channel, enable)`** / **`get_sweep_state(channel)`**: Enable or disable sweep mode, or read back whether it's enabled.
+- **`set_sweep_trigger(channel, source)`** / **`get_sweep_trigger(channel)`**: Set or read back the sweep trigger source (`INTERNAL`/`EXTERNAL`/`MANUAL`).
+- **`set_sweep_start_freq(channel, frequency_hz)`** / **`get_sweep_start_freq(channel)`**: Set or read the sweep start frequency.
+- **`set_sweep_end_freq(channel, frequency_hz)`** / **`get_sweep_end_freq(channel)`**: Set or read the sweep end frequency.
+- **`set_sweep_time(channel, sweep_time)`** / **`get_sweep_time(channel)`**: Set or read the sweep time.
+- **`set_sweep_start_hold_time(channel, hold_time)`** / **`get_sweep_start_hold_time(channel)`**: Set or read the sweep start hold time.
+- **`set_sweep_stop_hold_time(channel, hold_time)`** / **`get_sweep_stop_hold_time(channel)`**: Set or read the sweep stop hold time.
+- **`set_sweep_return_time(channel, return_time)`** / **`get_sweep_return_time(channel)`**: Set or read the sweep return time.
+- **`fire_sweep_trigger(channel)`**: Fire a sweep trigger on channel immediately. Requires the trigger source already set to `MANUAL`; call `set_sweep_trigger()` first otherwise.
+
+### Modulation
+
+`set_modulation()` only configures modulation on a specific channel and does not enable modulation. Only exception is the Keysight 33521B driver: set_modulation will temporarily disable modulation, if previously enabled, to change modulation type. Enable state is restored once `set_modulation` finishes successfully. In error cases, `set_modulation` could leave modulation disabled.
+To enable or disable modulation, use `modulation_enable()`. Only one modulation type is enabled at a time.
+`get_modulation_type` returns the most previous modulation type set by the user. 
 
 ### Talking to the Instrument
 

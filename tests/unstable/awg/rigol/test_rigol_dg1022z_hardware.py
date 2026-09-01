@@ -17,12 +17,16 @@ from instro.unstable.awg.drivers import RigolDG1022Z
 from instro.unstable.awg.types import (
     AmplitudeMeasurementUnit,
     Arbitrary,
+    BurstTriggerSource,
+    BurstType,
     ModulationType,
     Pulse,
     Sawtooth,
     Sine,
     Square,
     StaticValue,
+    SweepTriggerSource,
+    SweepType,
     Triangle,
     Waveform,
 )
@@ -32,7 +36,7 @@ pytestmark = pytest.mark.hardware
 # HARDWARE TEST SETUP - EDIT THESE VALUES BEFORE RUNNING THIS FILE.
 # Set VISA_RESOURCE to the bench unit's VISA resource string. Set VISA_BACKEND to
 # "@ivi" or "" for the system VISA library, or "@py" for pyvisa-py.
-VISA_RESOURCE = "USB0::6833::1602::DG1ZA000000000::0::INSTR"
+VISA_RESOURCE = "USB0::0x1AB1::0x0642::DG1ZA000000000::INSTR"
 
 VISA_BACKEND = "@py"
 CHANNELS = (1, 2)
@@ -47,6 +51,14 @@ FREQUENCY_TOLERANCE_REL = 1e-4
 AMPLITUDE_TOLERANCE_REL = 0.01
 AMPLITUDE_DBM_TOLERANCE_ABS = 0.1
 PHASE_TOLERANCE_DEG = 0.1
+
+TEST_SWEEP_START_HZ = 100.0
+TEST_SWEEP_END_HZ = 900.0
+TEST_SWEEP_TIME_S = 1.0
+TEST_SWEEP_START_HOLD_TIME_S = 0.1
+TEST_SWEEP_STOP_HOLD_TIME_S = 0.1
+TEST_SWEEP_RETURN_TIME_S = 0.1
+SWEEP_TIME_TOLERANCE_REL = 0.01
 
 _ARB_SAMPLES = (0.0, 0.5, 1.0, 0.5, 0.0, -0.5, -1.0, -0.5, 0.25)
 
@@ -375,3 +387,247 @@ def test_14_modulation_enable_re_arms_after_disable_without_remodulating(driver:
     finally:
         driver.modulation_enable(1, False)
     driver._check_errors()
+
+
+# ---------------------------------------------------------------------------
+# Burst
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "carrier",
+    [
+        Sine(frequency_hz=TEST_FREQUENCY_HZ),
+        Square(frequency_hz=TEST_FREQUENCY_HZ),
+        Sawtooth(frequency_hz=TEST_FREQUENCY_HZ),
+        Triangle(frequency_hz=TEST_FREQUENCY_HZ),
+        Pulse(frequency_hz=TEST_FREQUENCY_HZ, width_s=0.0002),
+        Arbitrary(samples=_ARB_SAMPLES, sample_rate_hz=100_000.0),
+    ],
+    ids=["sine", "square", "sawtooth", "triangle", "pulse", "arbitrary"],
+)
+def test_15_set_burst_ncycle_on_every_valid_carrier(driver: RigolDG1022Z, carrier: Waveform) -> None:
+    driver.set_waveform(1, carrier)
+    driver.set_burst(1, BurstType.NCYCLE)
+    driver._check_errors()
+
+    assert driver.get_burst_type(1) is BurstType.NCYCLE
+
+    driver.burst_enable(1, True)
+    driver._check_errors()
+    assert driver.get_burst_state(1) is True
+
+    driver.burst_enable(1, False)
+    driver._check_errors()
+    assert driver.get_burst_state(1) is False
+
+
+@pytest.mark.parametrize(
+    "burst_type",
+    [BurstType.NCYCLE, BurstType.GATED, BurstType.INFINITE],
+    ids=["ncycle", "gated", "infinite"],
+)
+def test_16_get_burst_type_matches_configured_type(driver: RigolDG1022Z, burst_type: BurstType) -> None:
+    driver.set_waveform(1, Square(frequency_hz=TEST_FREQUENCY_HZ))
+    driver.set_burst(1, burst_type)
+    driver._check_errors()
+
+    assert driver.get_burst_type(1) is burst_type
+
+
+def test_17_set_burst_trigger_rejects_gated_mode(driver: RigolDG1022Z) -> None:
+    """Regression guard: :BURS:TRIG:SOUR is rejected (-220) once :BURS:MODE GAT is set."""
+    driver.set_waveform(1, Square(frequency_hz=TEST_FREQUENCY_HZ))
+    driver.set_burst(1, BurstType.GATED)
+    driver._check_errors()
+
+    with pytest.raises(ValueError, match="GATED burst mode"):
+        driver.set_burst_trigger(1, BurstTriggerSource.EXTERNAL)
+
+    driver._check_errors()
+
+
+def test_18_set_burst_trigger_rejects_internal_source_in_infinite_mode(driver: RigolDG1022Z) -> None:
+    """Regression guard: INTERNAL trigger during INFINITE burst is rejected (-220) on the bench."""
+    driver.set_waveform(1, Square(frequency_hz=TEST_FREQUENCY_HZ))
+    driver.set_burst(1, BurstType.INFINITE)
+    driver._check_errors()
+
+    with pytest.raises(ValueError, match="INFINITE burst mode"):
+        driver.set_burst_trigger(1, BurstTriggerSource.INTERNAL)
+
+    driver._check_errors()
+
+
+@pytest.mark.parametrize(
+    ("burst_type", "source"),
+    [
+        (BurstType.NCYCLE, BurstTriggerSource.INTERNAL),
+        (BurstType.NCYCLE, BurstTriggerSource.EXTERNAL),
+        (BurstType.NCYCLE, BurstTriggerSource.MANUAL),
+        (BurstType.INFINITE, BurstTriggerSource.EXTERNAL),
+        (BurstType.INFINITE, BurstTriggerSource.MANUAL),
+    ],
+    ids=["ncycle_internal", "ncycle_external", "ncycle_manual", "infinite_external", "infinite_manual"],
+)
+def test_19_burst_trigger_roundtrip_matches_configured_source(
+    driver: RigolDG1022Z, burst_type: BurstType, source: BurstTriggerSource
+) -> None:
+    driver.set_waveform(1, Square(frequency_hz=TEST_FREQUENCY_HZ))
+    driver.set_burst(1, burst_type)
+    driver._check_errors()
+
+    driver.set_burst_trigger(1, source)
+    driver._check_errors()
+
+    assert driver.get_burst_trigger(1) is source
+
+
+def test_20_get_burst_trigger_rejects_invalid_channel(driver: RigolDG1022Z) -> None:
+    with pytest.raises(ValueError, match="channel must be 1 or 2"):
+        driver.get_burst_trigger(INVALID_CHANNEL)
+
+    driver._check_errors()
+
+
+@pytest.mark.parametrize(
+    "burst_type",
+    [BurstType.NCYCLE, BurstType.INFINITE],
+    ids=["ncycle", "infinite"],
+)
+def test_21_fire_burst_trigger_fires_when_source_already_manual(driver: RigolDG1022Z, burst_type: BurstType) -> None:
+    driver.set_waveform(1, Square(frequency_hz=TEST_FREQUENCY_HZ))
+    driver.set_burst(1, burst_type)
+    driver.set_burst_trigger(1, BurstTriggerSource.MANUAL)
+    driver._check_errors()
+
+    driver.output_enable(1, True)
+    driver.burst_enable(1, True)
+    driver.fire_burst_trigger(1)
+    driver._check_errors()
+
+    driver.output_enable(1, False)
+
+
+def test_22_fire_burst_trigger_rejects_non_manual_source(driver: RigolDG1022Z) -> None:
+    """GATED locks the trigger source to EXTERNAL; rejected the same as any other non-MANUAL source."""
+    driver.set_waveform(1, Square(frequency_hz=TEST_FREQUENCY_HZ))
+    driver.set_burst(1, BurstType.GATED)
+    driver.burst_enable(1, True)
+    driver._check_errors()
+
+    with pytest.raises(ValueError, match="already MANUAL"):
+        driver.fire_burst_trigger(1)
+
+    driver._check_errors()
+
+
+# ---------------------------------------------------------------------------
+# Sweep
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("sweep_type", list(SweepType), ids=lambda sweep_type: sweep_type.value.lower())
+def test_23_set_sweep_and_get_sweep_type_roundtrip(driver: RigolDG1022Z, sweep_type: SweepType) -> None:
+    """Also guards the abbreviated :SWE:SPAC? readback (LIN/LOG/STE) that get_sweep_type() must tolerate."""
+    driver.set_waveform(1, Sine(frequency_hz=TEST_FREQUENCY_HZ))
+
+    driver.set_sweep(1, sweep_type)
+    driver._check_errors()
+
+    assert driver.get_sweep_type(1) is sweep_type
+
+
+@pytest.mark.parametrize("channel", CHANNELS, ids=lambda channel: f"channel_{channel}")
+def test_24_sweep_enable_toggle(driver: RigolDG1022Z, channel: int) -> None:
+    driver.set_waveform(channel, Sine(frequency_hz=TEST_FREQUENCY_HZ))
+    try:
+        driver.sweep_enable(channel, True)
+        driver._check_errors()
+        assert driver.get_sweep_state(channel) is True
+    finally:
+        driver.sweep_enable(channel, False)
+
+    assert driver.get_sweep_state(channel) is False
+
+
+@pytest.mark.parametrize("source", list(SweepTriggerSource), ids=lambda source: source.value.lower())
+def test_25_sweep_trigger_roundtrip_matches_configured_source(driver: RigolDG1022Z, source: SweepTriggerSource) -> None:
+    driver.set_waveform(1, Sine(frequency_hz=TEST_FREQUENCY_HZ))
+    driver.set_sweep(1, SweepType.LINEAR)
+    driver._check_errors()
+
+    driver.set_sweep_trigger(1, source)
+    driver._check_errors()
+
+    assert driver.get_sweep_trigger(1) is source
+
+
+def test_26_get_sweep_trigger_rejects_invalid_channel(driver: RigolDG1022Z) -> None:
+    with pytest.raises(ValueError, match="channel must be 1 or 2"):
+        driver.get_sweep_trigger(INVALID_CHANNEL)
+
+    driver._check_errors()
+
+
+def test_27_fire_sweep_trigger_fires_when_source_already_manual(driver: RigolDG1022Z) -> None:
+    driver.set_waveform(1, Sine(frequency_hz=TEST_FREQUENCY_HZ))
+    driver.set_sweep(1, SweepType.LINEAR)
+    driver.set_sweep_trigger(1, SweepTriggerSource.MANUAL)
+    driver._check_errors()
+
+    try:
+        driver.output_enable(1, True)
+        driver.sweep_enable(1, True)
+        driver.fire_sweep_trigger(1)
+        driver._check_errors()
+    finally:
+        driver.sweep_enable(1, False)
+        driver.output_enable(1, False)
+
+
+def test_28_fire_sweep_trigger_rejects_non_manual_source(driver: RigolDG1022Z) -> None:
+    driver.set_waveform(1, Sine(frequency_hz=TEST_FREQUENCY_HZ))
+    driver.set_sweep(1, SweepType.LINEAR)
+    driver.set_sweep_trigger(1, SweepTriggerSource.EXTERNAL)
+    driver._check_errors()
+
+    try:
+        driver.sweep_enable(1, True)
+
+        with pytest.raises(ValueError, match="already MANUAL"):
+            driver.fire_sweep_trigger(1)
+
+        driver._check_errors()
+    finally:
+        driver.sweep_enable(1, False)
+
+
+def test_29_sweep_frequency_bounds_roundtrip(driver: RigolDG1022Z) -> None:
+    driver.set_waveform(1, Sine(frequency_hz=TEST_FREQUENCY_HZ))
+
+    driver.set_sweep_start_freq(1, TEST_SWEEP_START_HZ)
+    driver.set_sweep_end_freq(1, TEST_SWEEP_END_HZ)
+    driver._check_errors()
+
+    assert driver.get_sweep_start_freq(1) == pytest.approx(TEST_SWEEP_START_HZ, rel=FREQUENCY_TOLERANCE_REL)
+    assert driver.get_sweep_end_freq(1) == pytest.approx(TEST_SWEEP_END_HZ, rel=FREQUENCY_TOLERANCE_REL)
+
+
+def test_30_sweep_timing_roundtrip(driver: RigolDG1022Z) -> None:
+    driver.set_waveform(1, Sine(frequency_hz=TEST_FREQUENCY_HZ))
+
+    driver.set_sweep_time(1, TEST_SWEEP_TIME_S)
+    driver.set_sweep_start_hold_time(1, TEST_SWEEP_START_HOLD_TIME_S)
+    driver.set_sweep_stop_hold_time(1, TEST_SWEEP_STOP_HOLD_TIME_S)
+    driver.set_sweep_return_time(1, TEST_SWEEP_RETURN_TIME_S)
+    driver._check_errors()
+
+    assert driver.get_sweep_time(1) == pytest.approx(TEST_SWEEP_TIME_S, rel=SWEEP_TIME_TOLERANCE_REL)
+    assert driver.get_sweep_start_hold_time(1) == pytest.approx(
+        TEST_SWEEP_START_HOLD_TIME_S, rel=SWEEP_TIME_TOLERANCE_REL
+    )
+    assert driver.get_sweep_stop_hold_time(1) == pytest.approx(
+        TEST_SWEEP_STOP_HOLD_TIME_S, rel=SWEEP_TIME_TOLERANCE_REL
+    )
+    assert driver.get_sweep_return_time(1) == pytest.approx(TEST_SWEEP_RETURN_TIME_S, rel=SWEEP_TIME_TOLERANCE_REL)

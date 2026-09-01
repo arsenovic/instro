@@ -12,11 +12,17 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from instro.lib.types import Measurement
 from instro.unstable.awg.awg import AWGDriverBase, InstroAWG
 from instro.unstable.awg.types import (
     AmplitudeMeasurementUnit,
+    BurstTriggerSource,
+    BurstType,
+    GatePolarity,
     ModulationType,
     Sine,
+    SweepTriggerSource,
+    SweepType,
     Waveform,
 )
 
@@ -90,6 +96,40 @@ def test_01_awg_driver_base_contract_enforces_instantiation_rules() -> None:
         ("modulation_enable", (1, True)),
         ("get_modulation_type", (1,)),
         ("get_modulation_state", (1,)),
+        ("set_burst", (1, BurstType.NCYCLE)),
+        ("burst_enable", (1, True)),
+        ("get_burst_type", (1,)),
+        ("get_burst_state", (1,)),
+        ("set_burst_trigger", (1, BurstTriggerSource.INTERNAL)),
+        ("get_burst_trigger", (1,)),
+        ("fire_burst_trigger", (1,)),
+        ("set_burst_delay", (1, 0.001)),
+        ("get_burst_delay", (1,)),
+        ("set_burst_gate_polarity", (1, GatePolarity.NORM)),
+        ("get_burst_gate_polarity", (1,)),
+        ("set_burst_ncycles", (1, 10)),
+        ("get_burst_ncycles", (1,)),
+        ("set_burst_period", (1, 0.001)),
+        ("get_burst_period", (1,)),
+        ("set_sweep", (1, SweepType.LINEAR)),
+        ("get_sweep_type", (1,)),
+        ("sweep_enable", (1, True)),
+        ("get_sweep_state", (1,)),
+        ("set_sweep_trigger", (1, SweepTriggerSource.INTERNAL)),
+        ("get_sweep_trigger", (1,)),
+        ("set_sweep_start_freq", (1, 100.0)),
+        ("get_sweep_start_freq", (1,)),
+        ("set_sweep_end_freq", (1, 200.0)),
+        ("get_sweep_end_freq", (1,)),
+        ("set_sweep_time", (1, 0.5)),
+        ("get_sweep_time", (1,)),
+        ("set_sweep_start_hold_time", (1, 0.1)),
+        ("get_sweep_start_hold_time", (1,)),
+        ("set_sweep_stop_hold_time", (1, 0.1)),
+        ("get_sweep_stop_hold_time", (1,)),
+        ("set_sweep_return_time", (1, 0.1)),
+        ("get_sweep_return_time", (1,)),
+        ("fire_sweep_trigger", (1,)),
     ],
 )
 def test_02_awg_driver_base_optional_methods_raise_not_implemented(
@@ -116,6 +156,13 @@ def mock_driver() -> MagicMock:
     driver.get_output_load.return_value = 50.0
     driver.get_modulation_type.return_value = ModulationType.AM
     driver.get_modulation_state.return_value = False
+    driver.get_burst_type.return_value = BurstType.NCYCLE
+    driver.get_burst_state.return_value = False
+    driver.get_burst_trigger.return_value = BurstTriggerSource.INTERNAL
+    driver.get_burst_gate_polarity.return_value = GatePolarity.NORM
+    driver.get_sweep_type.return_value = SweepType.LINEAR
+    driver.get_sweep_state.return_value = False
+    driver.get_sweep_trigger.return_value = SweepTriggerSource.INTERNAL
     return driver
 
 
@@ -201,6 +248,40 @@ def test_04_helper_tags_avoid_collision_with_positional_params(awg: InstroAWG) -
         ("modulation_enable", (True,)),
         ("get_modulation_type", ()),
         ("get_modulation_state", ()),
+        ("set_burst", (BurstType.NCYCLE,)),
+        ("burst_enable", (True,)),
+        ("get_burst_type", ()),
+        ("get_burst_state", ()),
+        ("set_burst_trigger", (BurstTriggerSource.INTERNAL,)),
+        ("get_burst_trigger", ()),
+        ("fire_burst_trigger", ()),
+        ("set_burst_delay", (0.001,)),
+        ("get_burst_delay", ()),
+        ("set_burst_gate_polarity", (GatePolarity.NORM,)),
+        ("get_burst_gate_polarity", ()),
+        ("set_burst_ncycles", (10,)),
+        ("get_burst_ncycles", ()),
+        ("set_burst_period", (0.001,)),
+        ("get_burst_period", ()),
+        ("set_sweep", (SweepType.LINEAR,)),
+        ("get_sweep_type", ()),
+        ("sweep_enable", (True,)),
+        ("get_sweep_state", ()),
+        ("set_sweep_trigger", (SweepTriggerSource.INTERNAL,)),
+        ("get_sweep_trigger", ()),
+        ("set_sweep_start_freq", (100.0,)),
+        ("get_sweep_start_freq", ()),
+        ("set_sweep_end_freq", (200.0,)),
+        ("get_sweep_end_freq", ()),
+        ("set_sweep_time", (0.5,)),
+        ("get_sweep_time", ()),
+        ("set_sweep_start_hold_time", (0.1,)),
+        ("get_sweep_start_hold_time", ()),
+        ("set_sweep_stop_hold_time", (0.1,)),
+        ("get_sweep_stop_hold_time", ()),
+        ("set_sweep_return_time", (0.1,)),
+        ("get_sweep_return_time", ()),
+        ("fire_sweep_trigger", ()),
     ],
 )
 @pytest.mark.parametrize("channel", [0, 1, 2, 3])
@@ -214,3 +295,27 @@ def test_05_channel_scoped_methods_respect_channel_bounds(
     else:
         with pytest.raises(ValueError, match=f"channel {channel} out of range"):
             getattr(awg, method_name)(channel, *args)
+
+
+# ---------------------------------------------------------------------------
+# Categorical getters publish a Measurement carrying the enum's `.value`
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("method_name", "descriptor", "expected_value"),
+    [
+        ("get_modulation_type", "modulation_type", ModulationType.AM.value),
+        ("get_burst_type", "burst_type", BurstType.NCYCLE.value),
+        ("get_burst_trigger", "burst_trigger", BurstTriggerSource.INTERNAL.value),
+        ("get_burst_gate_polarity", "burst_gate_polarity", GatePolarity.NORM.value),
+        ("get_sweep_type", "sweep_type", SweepType.LINEAR.value),
+        ("get_sweep_trigger", "sweep_trigger", SweepTriggerSource.INTERNAL.value),
+    ],
+)
+def test_06_categorical_getters_publish_a_measurement_with_the_enum_value(
+    awg: InstroAWG, method_name: str, descriptor: str, expected_value: str
+) -> None:
+    measurement = getattr(awg, method_name)(1)
+    assert isinstance(measurement, Measurement)
+    assert measurement.channel_data[f"test_awg.ch1.{descriptor}"] == [expected_value]

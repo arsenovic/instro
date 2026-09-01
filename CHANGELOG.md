@@ -1,5 +1,75 @@
 # Changelog
 
+## [1.15.0](https://github.com/nominal-io/instro/compare/instro-v1.14.0...instro-v1.15.0) (2026-08-31)
+
+
+### Features
+
+* publish categorical instrument reads as Measurement ([#445](https://github.com/nominal-io/instro/issues/445)) ([6ccce83](https://github.com/nominal-io/instro/commit/6ccce834b59f67753c192374c4154d0901d8bb3a))
+
+## [1.14.0](https://github.com/nominal-io/instro/compare/instro-v1.13.0...instro-v1.14.0) (2026-08-28)
+
+
+### Features
+
+* **awg:** add burst to Keysight 33521B driver ([#405](https://github.com/nominal-io/instro/issues/405)) ([bc38a6b](https://github.com/nominal-io/instro/commit/bc38a6b183904c00718d92b8f407dda031fa6e43))
+* **awg:** add sweep to Keysight 33521B driver ([#410](https://github.com/nominal-io/instro/issues/410)) ([a55974c](https://github.com/nominal-io/instro/commit/a55974c1cbecc561e721440556dc2031dd3d0faa))
+* **awg:** use bulk download for small LAN waveforms ([#432](https://github.com/nominal-io/instro/issues/432)) ([bde7b1e](https://github.com/nominal-io/instro/commit/bde7b1ee24a9ef77b0c1332a3d4700c8185dbef2))
+* **psu:** add get_operating_mode query for CV/CC/off state ([#438](https://github.com/nominal-io/instro/issues/438)) ([9da5701](https://github.com/nominal-io/instro/commit/9da5701ba6cb2d53b4ae9a36567ae9a97048e077))
+
+
+### Bug Fixes
+
+* **labjack:** fix start and timeout inconsistencies ([#444](https://github.com/nominal-io/instro/issues/444)) ([5acbd4d](https://github.com/nominal-io/instro/commit/5acbd4dae16eb6902f7c696f241069473bc952c8))
+
+## [1.13.0](https://github.com/nominal-io/instro/compare/instro-v1.12.0...instro-v1.13.0) (2026-08-24)
+
+
+### Features
+
+* **mcc:** typed channel support for mcc daqs ([#403](https://github.com/nominal-io/instro/issues/403)) ([df59d2f](https://github.com/nominal-io/instro/commit/df59d2f4173ff145dac003dc7f1544e669f201c4))
+* **psu:** implement get_voltage_setpoint and get_current_setpoint for SimulatedPSU ([#421](https://github.com/nominal-io/instro/issues/421)) ([e6bfd57](https://github.com/nominal-io/instro/commit/e6bfd5730f0c2128176f91aa52477e1c7da6cc60))
+
+
+### Bug Fixes
+
+* **discover:** report 2 programmable channels for SiglentSPD3303 ([#407](https://github.com/nominal-io/instro/issues/407)) ([d69d000](https://github.com/nominal-io/instro/commit/d69d000747000103cd9152c9d1ff4e149878a31e))
+
+## [1.12.0](https://github.com/nominal-io/instro/compare/instro-v1.11.0...instro-v1.12.0) (2026-08-21)
+
+
+### Features
+
+* **awg:** add sweep to Rigol DG1022Z driver ([#412](https://github.com/nominal-io/instro/issues/412)) ([bd18a1b](https://github.com/nominal-io/instro/commit/bd18a1b454cc91d7327808405c1700f2f811268a))
+
+## [1.11.0](https://github.com/nominal-io/instro/compare/instro-v1.10.0...instro-v1.11.0) (2026-08-21)
+
+
+### Features
+
+* **awg:** add keysight 33500b awg driver ([#359](https://github.com/nominal-io/instro/issues/359)) ([4d36ade](https://github.com/nominal-io/instro/commit/4d36ade00313184e8aa202bd3a58e88cd3ec2393))
+* **awg:** add sweep functions to AWG base ([#388](https://github.com/nominal-io/instro/issues/388)) ([2b6227a](https://github.com/nominal-io/instro/commit/2b6227ac07ff3ac6f2a1538a750a8b5fb65dc58e))
+* **daq:** ni typed channel support ([#382](https://github.com/nominal-io/instro/issues/382)) ([8675855](https://github.com/nominal-io/instro/commit/867585557101deca2efc03c9b9d82ea038a95217))
+* **eload:** json config-driven instrument creation ([#411](https://github.com/nominal-io/instro/issues/411)) ([d1da228](https://github.com/nominal-io/instro/commit/d1da228d2c280365c277f43b0bff22bdc5adb846))
+* **modbus:** share one connection across multiple unit addresses ([#409](https://github.com/nominal-io/instro/issues/409)) ([765b9ea](https://github.com/nominal-io/instro/commit/765b9eac3c28e949ca5bd08d83e14340949d6105))
+* **unstable:** add a shared CAN transport on TransportBase ([#396](https://github.com/nominal-io/instro/issues/396)) ([18da653](https://github.com/nominal-io/instro/commit/18da653ae41097b7f930e11d3ac3145d670a7691))
+
+
+### Bug Fixes
+
+* **ljm:** stop() stops the stream ([#413](https://github.com/nominal-io/instro/issues/413)) ([ec77591](https://github.com/nominal-io/instro/commit/ec77591977bf7335b29c82d6080a30ce107de88a))
+
+## [1.10.0](https://github.com/nominal-io/instro/compare/instro-v1.9.1...instro-v1.10.0) (2026-08-13)
+
+
+### Features
+
+* **awg:** add burst to awg ([#367](https://github.com/nominal-io/instro/issues/367)) ([27fea81](https://github.com/nominal-io/instro/commit/27fea81239be095b97a8e54093a781c029263316))
+* **dmm:** json config-driven instrument creation ([#387](https://github.com/nominal-io/instro/issues/387)) ([6b6789f](https://github.com/nominal-io/instro/commit/6b6789f31970d639755ce9b2377e7d928cf88239))
+* **instrodaq:** unified read and write functions ([#303](https://github.com/nominal-io/instro/issues/303)) ([22abe49](https://github.com/nominal-io/instro/commit/22abe4997a126b7600c3be30b84411cdfa25db46))
+* **lib:** transport base class that implements shared ownership of transport ([#336](https://github.com/nominal-io/instro/issues/336)) ([80841e0](https://github.com/nominal-io/instro/commit/80841e0d81f082edbf59e8ad910f27f05d63e60b))
+* **psu:** implement get_voltage_setpoint()/get_current_setpoint() for SiglentSPD3303 ([#377](https://github.com/nominal-io/instro/issues/377)) ([653a6db](https://github.com/nominal-io/instro/commit/653a6dbd50958e4f2000556d43d1086b9f2b8f93))
+
 ## [1.9.1](https://github.com/nominal-io/instro/compare/instro-v1.9.0...instro-v1.9.1) (2026-08-10)
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # ============================================================================
 # Runtime data types
@@ -21,7 +21,7 @@ class BackgroundDaemonConfig:
 class Measurement:
     """Data structure to hold measurement data. All channels have a common timebase."""
 
-    channel_data: dict[str, list[float]]
+    channel_data: dict[str, list[float] | list[str]]
     timestamps: list[int]
     tags: dict[str, str] | None = None
 
@@ -89,6 +89,7 @@ class Command:
 class DeviceInfo(BaseModel):
     """Device metadata. ``name`` is the channel-name prefix on publish (e.g. ``my_device.temperature``)."""
 
+    model_config = ConfigDict(extra="forbid")
     name: str
     description: str = ""
     manufacturer: str = ""

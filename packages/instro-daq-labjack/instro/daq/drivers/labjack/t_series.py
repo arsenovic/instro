@@ -1,4 +1,7 @@
 import atexit
+import logging
+import math
+import threading
 import time
 import weakref
 from dataclasses import dataclass
@@ -8,8 +11,14 @@ from typing import Mapping
 from instro.daq import DAQDriverBase, HWTimingException
 from instro.daq.drivers import HWTimestamper
 from instro.daq.drivers.labjack.t_series_models import LJ_T4, LJ_T7, LJ_T8, LJ_Model
+from instro.daq.scaling.thermocouple import kelvin_to_unit, unit_to_kelvin
 from instro.daq.types import (
     AnalogChannel,
+    AnalogChannelUnion,
+    AnalogCurrentChannel,
+    AnalogThermocoupleChannel,
+    AnalogVoltageChannel,
+    CJCSource,
     DAQChannel,
     DigitalChannel,
     DigitalLineChannel,
@@ -19,6 +28,9 @@ from instro.daq.types import (
 )
 from instro.lib import Measurement
 from labjack import ljm
+from labjack.ljm import errorcodes
+
+logger = logging.getLogger(__name__)
 
 # TODO(INSTRO-89): Remove this once context managers are added.
 # We use a callback functionality of the LJM driver. This is for performance reasons vs. python threading.
@@ -72,6 +84,7 @@ class LabJackTSeriesDriver(DAQDriverBase):
         self._global_scan_rate: float | None = None
         self._global_scans_per_read: int | None = None
         self._streaming_active: bool = False
+        self._stream_lock = threading.Lock()  # orders the LJM callback's read against stop()
         self._actual_sample_period: int | None = None
         self._actual_sample_rate: float | None = None
         self._timestamper: HWTimestamper | None = None  # None until first hw-timed read
@@ -91,17 +104,31 @@ class LabJackTSeriesDriver(DAQDriverBase):
         self._stop_stream()
 
     def _stop_stream(self):
+        """Stop the stream, tolerating a handle with no stream running."""
         try:
             ljm.eStreamStop(self._handle)
-        except ljm.LJMError as e:
-            pass
+        except ljm.LJMError as error:
+            logger.debug("eStreamStop on handle %s reported: %s", self._handle, error)
 
     def stop(self, **kwargs):
         """Stop the DAQ device."""
-        if self._streaming_active:
-            # TODO add debug logger
-            # ljm.eStreamStop(self._handle)
+        with self._stream_lock:
+            if not self._streaming_active:
+                return
             self._streaming_active = False
+        # Released before unregistering: LJM waits on an in-flight callback, which wants this lock.
+        ljm.setStreamCallback(self._handle, None)
+        self._stop_stream()
+        self._timestamper = None
+        self._drain_stream_queue()
+
+    def _drain_stream_queue(self):
+        """Discard scans the callback queued before the stream stopped."""
+        while True:
+            try:
+                self._data_queue.get_nowait()
+            except Empty:
+                break
 
     def close(self):
         """Disconnect from LabJack device."""
@@ -134,7 +161,35 @@ class LabJackTSeriesDriver(DAQDriverBase):
         self,
         channel: AnalogChannel,
     ):
-        """Configure an ai channel on the LabJack device."""
+        """Deprecated: use ``configure_ai_voltage_channel``. Configures an ai channel on the LabJack device."""
+        self.configure_ai_voltage_channel(
+            AnalogVoltageChannel(
+                physical_channel=channel.physical_channel,
+                alias=channel.alias,
+                direction=channel.direction,
+                range_max=channel.range_max,
+                range_min=channel.range_min,
+                scaler=channel.scaler,
+                terminal_config=channel.terminal_config,
+            )
+        )
+
+    def configure_ao_channel(self, channel: AnalogChannel):
+        """Deprecated: use ``configure_ao_voltage_channel``. Configures an AO channel on the LabJack device."""
+        self.configure_ao_voltage_channel(
+            AnalogVoltageChannel(
+                physical_channel=channel.physical_channel,
+                alias=channel.alias,
+                direction=channel.direction,
+                range_max=channel.range_max,
+                range_min=channel.range_min,
+                scaler=channel.scaler,
+                terminal_config=channel.terminal_config,
+            )
+        )
+
+    def configure_ai_voltage_channel(self, channel: AnalogVoltageChannel):
+        """Configure a voltage ai channel on the LabJack device."""
         if self._model is None:
             self._initialize_model()
 
@@ -146,10 +201,98 @@ class LabJackTSeriesDriver(DAQDriverBase):
 
         self._ai_channels[channel.alias] = channel
 
-    def configure_ao_channel(self, channel: AnalogChannel):
+    def configure_ao_voltage_channel(self, channel: AnalogVoltageChannel):
+        """Configure a voltage AO channel on the LabJack device."""
         # LabJack DACs don't need pre-configuration; write_analog_value uses ljm.eWriteName directly.
         # Still record the channel so InstroDAQ's ao_channels proxy can resolve it.
         self._ao_channels[channel.alias] = channel
+
+    def configure_ai_current_channel(self, channel: AnalogCurrentChannel):
+        raise NotImplementedError(
+            "LabJack T-series analog inputs measure voltage only. Measure current through an external shunt "
+            "resistor (e.g. an LJTick-CurrentShunt) with a voltage input and a scaler. "
+            "See https://support.labjack.com/docs/measuring-current-app-note."
+        )
+
+    def configure_ao_current_channel(self, channel: AnalogCurrentChannel):
+        raise NotImplementedError(
+            "LabJack T-series DACs output voltage only; current output requires external circuitry. "
+        )
+
+    def configure_ai_thermocouple_channel(self, channel: AnalogThermocoupleChannel):
+        """Configure a thermocouple ai channel; volts convert to temperature in the channel's unit on read.
+
+        ``range_min``/``range_max`` are ignored: the ADC range is fixed per model (T7 0.1 V, T8 0.075 V, T4 none).
+        """
+        if self._model is None:
+            self._initialize_model()
+        assert self._model is not None
+
+        if channel.cjc_source is CJCSource.CHANNEL:
+            raise ValueError("cjc_source CHANNEL is not supported by the LabJack driver; use INTERNAL or CONSTANT.")
+        if channel.cjc_source is CJCSource.CONSTANT and channel.cjc_temp is None:
+            raise ValueError("cjc_temp is required when cjc_source is CONSTANT.")
+
+        aNames, aValues = self._model.thermocouple_channel_configs(channel)
+
+        if aNames:
+            ljm.eWriteNames(self._handle, len(aNames), aNames, aValues)
+
+        self._ai_channels[channel.alias] = channel
+
+        self._refresh_tc_cjc()
+
+    def _cjc_read_names(self) -> list[str]:
+        """CJC sensor registers appended after the AI channels in every read and stream scan list."""
+        names: list[str] = []
+        for channel in self._ai_channels.values():
+            if isinstance(channel, AnalogThermocoupleChannel) and channel.cjc_source is not CJCSource.CONSTANT:
+                assert self._model is not None
+                name = self._model.tc_cjc_read_name(channel.physical_channel)
+                if name is not None and name not in names:
+                    names.append(name)
+        return names
+
+    def _refresh_tc_cjc(self):
+        """Let the model refresh its CJC state when any channel needs device-sourced CJC; no-op otherwise."""
+        if any(
+            isinstance(channel, AnalogThermocoupleChannel) and channel.cjc_source is not CJCSource.CONSTANT
+            for channel in self._ai_channels.values()
+        ):
+            assert self._model is not None
+            self._model.refresh_tc_cjc(self._handle)
+
+    def _tc_volts_to_temps(
+        self,
+        channel: AnalogThermocoupleChannel,
+        volts: list[float],
+        cjc_samples: dict[str, list[float]],
+    ) -> list[float]:
+        """Convert a batch of thermocouple volts to temperatures in the channel's unit."""
+        assert self._model is not None
+        input_scaler = channel.tc_input_scaler or self._model.default_tc_input_scaler
+        if input_scaler is not None:
+            volts = [input_scaler.scale(v) for v in volts]
+
+        if channel.cjc_source is CJCSource.CONSTANT:
+            assert channel.cjc_temp is not None
+            cjc_k = unit_to_kelvin(channel.cjc_temp, channel.unit)
+        else:
+            cjc_k = self._model.tc_cjc_kelvin(channel.physical_channel, cjc_samples)
+
+        tc_type = getattr(ljm.constants, f"tt{channel.tc_type.value}")
+        temps = []
+        for v in volts:
+            try:
+                # Convert calculated Kelvin temp to user requested unit
+                # LJM's conversion and the T-series CJC registers work only in kelvin.
+                temps.append(kelvin_to_unit(ljm.tcVoltsToTemp(tc_type, v, cjc_k), channel.unit))
+            except ljm.LJMError as error:
+                if error.errorCode not in (errorcodes.VOLTAGE_OUT_OF_RANGE, errorcodes.TEMPERATURE_OUT_OF_RANGE):
+                    raise
+                logger.warning("Thermocouple channel '%s' read out of range, returning NaN: %s", channel.alias, error)
+                temps.append(math.nan)  # open/overranged input or dropped-scan sentinel; keep the batch flowing
+        return temps
 
     def configure_ai_hw_timing(
         self,
@@ -180,7 +323,7 @@ class LabJackTSeriesDriver(DAQDriverBase):
 
         self._ai_hw_timing_config = hw_timing_config
 
-    def _validate_scan_rate(self, hw_timing_config: HWTimingConfig, channels: list[AnalogChannel]):
+    def _validate_scan_rate(self, hw_timing_config: HWTimingConfig, channels: list[AnalogChannelUnion]):
         """Pre-check the requested scan rate so we raise a clear error instead of LJM's cryptic one."""
         assert self._model
 
@@ -194,7 +337,8 @@ class LabJackTSeriesDriver(DAQDriverBase):
         if isinstance(self._model, (LJ_T8)):
             return
 
-        if self._model.MAX_SCAN_RATE / len(channels) < hw_timing_config.sample_rate:
+        num_scan_columns = len(channels) + len(self._cjc_read_names())
+        if self._model.MAX_SCAN_RATE / num_scan_columns < hw_timing_config.sample_rate:
             raise HWTimingException(
                 "The requested sample rate is higher than the device can support for the number of channels requested. This is a multiplexed DAQ."
             )
@@ -204,18 +348,20 @@ class LabJackTSeriesDriver(DAQDriverBase):
         if self._global_scan_rate is None:
             raise HWTimingException("No hardware timing configuration exists. Can not call Start")
 
-        if self._streaming_active is True:
-            # TODO add debug logger
-            return
+        if self._streaming_active:
+            raise RuntimeError("A stream is already running. Call stop() before starting a new acquisition.")
 
         # For LabJack, we need to know the channels to start streaming
         channels = self._ai_channels.values()
         if not channels:
             raise ValueError("No channels specified to start streaming on LabJack device.")
 
-        physical_channels = [ch.physical_channel for ch in channels]
+        scan_names = [ch.physical_channel for ch in channels] + self._cjc_read_names()
 
-        scan_list = ljm.namesToAddresses(len(physical_channels), physical_channels)[0]
+        scan_list = ljm.namesToAddresses(len(scan_names), scan_names)[0]
+
+        # Models with no streamable CJC source snapshot it now, before the stream claims the ADC.
+        self._refresh_tc_cjc()
 
         self._timestamper = None
         actual_scan_rate = ljm.eStreamStart(
@@ -228,12 +374,23 @@ class LabJackTSeriesDriver(DAQDriverBase):
         self._actual_sample_rate = actual_scan_rate
         self._actual_sample_period = round(1e9 / actual_scan_rate)
 
-        ljm.setStreamCallback(self._handle, self._stream_callback)
+        with self._stream_lock:
+            self._streaming_active = True
 
-        self._streaming_active = True
+        try:
+            ljm.setStreamCallback(self._handle, self._stream_callback)
+        except ljm.LJMError:
+            with self._stream_lock:
+                self._streaming_active = False
+            self._stop_stream()
+            raise
 
     def _stream_callback(self, arg):
-        response = ljm.eStreamRead(self._handle)
+        # The lock keeps this read strictly before stop()'s eStreamStop, so it cannot fail.
+        with self._stream_lock:
+            if not self._streaming_active:
+                return
+            response = ljm.eStreamRead(self._handle)
         ai_timestamp = time.time_ns()  # TODO read from labjack. It has some capabilities here.
 
         self._data_queue.put_nowait((response, ai_timestamp))
@@ -250,7 +407,9 @@ class LabJackTSeriesDriver(DAQDriverBase):
             if len(physical_channels) > 1:
                 physical_channels = [physical_channels[0]] + [f"{ch}_CAPTURE" for ch in physical_channels[1:]]
 
-        response = ljm.eReadNames(handle=self._handle, numFrames=len(channels), aNames=physical_channels)
+        read_names = physical_channels + self._cjc_read_names()
+        self._refresh_tc_cjc()
+        response = ljm.eReadNames(handle=self._handle, numFrames=len(read_names), aNames=read_names)
         timestamp = time.time_ns()  # TODO read from labjack. It has some capabilities here.
 
         return LabJackData(data=response, timestamp=timestamp, dt=None)
@@ -258,19 +417,27 @@ class LabJackTSeriesDriver(DAQDriverBase):
     def fetch_analog(
         self,
     ) -> LabJackData:
+        if not self._streaming_active:
+            raise RuntimeError("No active scan. Call start() before fetch_analog().")
+        if self._global_scans_per_read is None or self._actual_sample_period is None:
+            raise RuntimeError(
+                "Hardware timing was never configured; call configure_ai_sample_rate() before fetch_analog()."
+            )
+        # fetch time deadline, floored at 5s and dynamic to support low-rate, high-res reads
+        deadline = max(5.0, 2 * self._global_scans_per_read * self._actual_sample_period * 1e-9)
         # Is receiving data from the ljm registered callback.
         try:
-            callback_data = self._data_queue.get(timeout=5)
+            callback_data = self._data_queue.get(timeout=deadline)
             labjack_data, timestamp = callback_data[0], callback_data[1]
             samples, self._points_in_fifo, self.points_in_buffer = labjack_data[0], labjack_data[1], labjack_data[2]
             return LabJackData(data=samples, timestamp=timestamp, dt=self._actual_sample_period)
         except Empty:
-            raise TimeoutError(f"LabJack timeout. No data received.")
+            raise TimeoutError(f"LabJack timeout. No data received after {deadline:.3g}s.")
 
     def get_actual_sample_rate(self) -> float | None:
         return self._actual_sample_rate
 
-    def write_analog_value(self, channel: AnalogChannel, value: float):
+    def write_analog_value(self, channel: AnalogChannelUnion, value: float):
         ljm.eWriteName(self._handle, channel.physical_channel, value)
 
     # ====== DIGITAL ==========
@@ -350,12 +517,20 @@ class LabJackTSeriesDriver(DAQDriverBase):
         # aData[2] contains the second AIN0 sample aData[3] contains the second AIN1 sample ...
 
         num_channels = len(channel_list)
-        samples_per_channel = len(response.data) // num_channels
+        cjc_names = self._cjc_read_names()
+        num_columns = num_channels + len(cjc_names)
+        samples_per_channel = len(response.data) // num_columns
 
         # De-interleave the data
         channel_data = {}
         for i, channel in enumerate(channel_list):
-            channel_data[f"{daq_name}.{channel}"] = response.data[i::num_channels]
+            channel_data[f"{daq_name}.{channel}"] = response.data[i::num_columns]
+
+        cjc_samples = {name: response.data[num_channels + i :: num_columns] for i, name in enumerate(cjc_names)}
+        for alias, channel_config in channel_list.items():
+            if isinstance(channel_config, AnalogThermocoupleChannel):
+                key = f"{daq_name}.{alias}"
+                channel_data[key] = self._tc_volts_to_temps(channel_config, channel_data[key], cjc_samples)
 
         if response.dt:
             if self._timestamper is None:

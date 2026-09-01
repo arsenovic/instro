@@ -7,12 +7,17 @@ from instro.unstable.awg.awg import AWGDriverBase
 from instro.unstable.awg.types import (
     AmplitudeMeasurementUnit,
     Arbitrary,
+    BurstTriggerSource,
+    BurstType,
+    GatePolarity,
     ModulationType,
     Pulse,
     Sawtooth,
     Sine,
     Square,
     StaticValue,
+    SweepTriggerSource,
+    SweepType,
     Triangle,
     Waveform,
 )
@@ -21,6 +26,7 @@ _HIGH_Z_SENTINEL = 9.9e37
 
 _ARB_MIN_POINTS = 9
 _ARB_MAX_POINTS = 16384
+_ARB_BULK_COMMAND_MAX_BYTES = 32 * 1024
 
 _SAWTOOTH_SYMMETRY_PCT = 100
 _TRIANGLE_SYMMETRY_PCT = 50
@@ -32,12 +38,36 @@ _MOD_INTERNAL_FUNCTIONS: dict[type, str] = {
     Triangle: "TRI",
 }
 
+_BURST_MODES: dict[BurstType, str] = {
+    BurstType.NCYCLE: "TRIG",
+    BurstType.GATED: "GAT",
+    BurstType.INFINITE: "INF",
+}
+_BURST_TYPES: dict[str, BurstType] = {mode: burst_type for burst_type, mode in _BURST_MODES.items()}
+
+# :SWE:SPAC? always echoes the instrument's own abbreviated mnemonic, never the full keyword written.
+_SWEEP_SPACING_READBACK: dict[str, SweepType] = {
+    "LIN": SweepType.LINEAR,
+    "LOG": SweepType.LOG,
+    "STE": SweepType.STEP,
+}
+
+# :FUNC? mnemonic -> user-facing waveform name, for carriers the DG1022Z cannot sweep.
+_INVALID_SWEEPS: dict[str, str] = {
+    "DC": StaticValue.__name__,
+    "NOIS": "Noise",
+    "PULS": Pulse.__name__,
+}
+
 
 class RigolDG1022Z(AWGDriverBase):
     """SCPI driver for the Rigol DG1022Z two-channel arbitrary waveform generator."""
 
     def __init__(self, visa_resource: str | VisaConfig) -> None:
+        config = visa_resource if isinstance(visa_resource, VisaConfig) else VisaConfig(visa_resource=visa_resource)
         self._visa = VisaDriver(visa_resource)
+        self._arb_bulk_supported = config.visa_resource.upper().startswith("TCPIP")
+        self._write_terminator = config.terminator.write
         self._arb_waveforms: dict[int, Arbitrary] = {}
 
     def open(self) -> None:
@@ -79,11 +109,21 @@ class RigolDG1022Z(AWGDriverBase):
                         f" per download, got {num_points}"
                     )
                 self._write_checked(f":SOUR{channel}:APPL:ARB {waveform.sample_rate_hz}")
-                self._write_checked(f":SOUR{channel}:TRAC:DATA:POIN VOLATILE,{num_points}")
-                for point, sample in enumerate(waveform.samples, start=1):
-                    decimal_value = round((sample + 1) / 2 * 16383)
-                    # error queue is not drained, so checking every point avoids lost error messages in exchange for a longer runtime
-                    self._write_checked(f":SOUR{channel}:TRAC:DATA:VAL VOLATILE,{point},{decimal_value}")
+                bulk_command = None
+                if self._arb_bulk_supported:
+                    data = ",".join(str(sample) for sample in waveform.samples)
+                    bulk_command = f":SOUR{channel}:TRAC:DATA VOLATILE,{data}"
+                if (
+                    bulk_command is not None
+                    and len((bulk_command + self._write_terminator).encode()) < _ARB_BULK_COMMAND_MAX_BYTES
+                ):
+                    self._write_checked(bulk_command)
+                else:
+                    self._write_checked(f":SOUR{channel}:TRAC:DATA:POIN VOLATILE,{num_points}")
+                    for point, sample in enumerate(waveform.samples, start=1):
+                        decimal_value = round((sample + 1) / 2 * 16383)
+                        # error queue is not drained, so checking every point avoids lost error messages in exchange for a longer runtime
+                        self._write_checked(f":SOUR{channel}:TRAC:DATA:VAL VOLATILE,{point},{decimal_value}")
                 self._arb_waveforms[channel] = waveform
             elif isinstance(waveform, StaticValue):
                 self._visa.write(f":SOUR{channel}:FUNC DC")
@@ -252,6 +292,259 @@ class RigolDG1022Z(AWGDriverBase):
             result = self._visa.query(f":SOUR{channel}:MOD:STAT?").strip() == "ON"
             self._check_errors()
         return result
+
+    def set_burst(self, channel: int, burst_type: BurstType) -> None:
+        _check_channel(channel)
+        if not isinstance(burst_type, BurstType):
+            raise TypeError(f"burst_type must be a BurstType, got {type(burst_type).__name__}")
+        with self._visa.lock():
+            carrier = self.get_waveform(channel)
+            if isinstance(carrier, StaticValue):
+                raise ValueError(f"the DG1022Z cannot burst a StaticValue (DC) waveform on channel {channel}")
+            self._visa.write(f":SOUR{channel}:BURS:MODE {_BURST_MODES[burst_type]}")
+            self._check_errors()
+
+    def get_burst_type(self, channel: int) -> BurstType:
+        _check_channel(channel)
+        with self._visa.lock():
+            mode = self._visa.query(f":SOUR{channel}:BURS:MODE?").strip()
+            self._check_errors()
+        if mode not in _BURST_TYPES:
+            raise ValueError(f"Rigol DG1022Z reported unsupported burst mode '{mode}'")
+        return _BURST_TYPES[mode]
+
+    def burst_enable(self, channel: int, enable: bool) -> None:
+        _check_channel(channel)
+        self._write_checked(f":SOUR{channel}:BURS:STAT {'ON' if enable else 'OFF'}")
+
+    def get_burst_state(self, channel: int) -> bool:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = self._visa.query(f":SOUR{channel}:BURS:STAT?").strip() == "ON"
+            self._check_errors()
+        return result
+
+    def set_burst_trigger(self, channel: int, source: BurstTriggerSource) -> None:
+        _check_channel(channel)
+        if not isinstance(source, BurstTriggerSource):
+            raise TypeError(f"source must be a BurstTriggerSource, got {type(source).__name__}")
+        with self._visa.lock():
+            burst_type = self.get_burst_type(channel)
+            if burst_type is BurstType.GATED:
+                raise ValueError(
+                    f"Cannot trigger since channel {channel} is in GATED burst mode, call set_burst with a different burst_type first"
+                )
+            if burst_type is BurstType.INFINITE and source is BurstTriggerSource.INTERNAL:
+                raise ValueError(
+                    f"Cannot use INTERNAL trigger source since channel {channel} is in INFINITE burst mode,"
+                    " use EXTERNAL or MANUAL instead"
+                )
+            self._visa.write(f":SOUR{channel}:BURS:TRIG:SOUR {source.value}")
+            self._check_errors()
+
+    def get_burst_trigger(self, channel: int) -> BurstTriggerSource:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = BurstTriggerSource(self._visa.query(f":SOUR{channel}:BURS:TRIG:SOUR?").strip())
+            self._check_errors()
+        return result
+
+    def fire_burst_trigger(self, channel: int) -> None:
+        _check_channel(channel)
+        with self._visa.lock():
+            if not self.get_burst_state(channel):
+                raise ValueError(
+                    f"Cannot fire a burst trigger on channel {channel} unless burst mode is already"
+                    " enabled, call burst_enable(channel, True) first"
+                )
+            source = self.get_burst_trigger(channel)
+            if source is not BurstTriggerSource.MANUAL:
+                raise ValueError(
+                    f"Cannot fire a burst trigger on channel {channel} unless the trigger source is"
+                    f" already MANUAL, call set_burst_trigger(channel, BurstTriggerSource.MANUAL) first. Got: {source.name}"
+                )
+            self._write_checked(f":SOUR{channel}:BURS:TRIG")
+
+    def set_burst_delay(self, channel: int, delay_s: float) -> None:
+        _check_channel(channel)
+        if delay_s < 0:
+            raise ValueError(f"delay_s must be non-negative, got {delay_s}")
+        self._write_checked(f":SOUR{channel}:BURS:TDEL {delay_s}")
+
+    def get_burst_delay(self, channel: int) -> float:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = float(self._visa.query(f":SOUR{channel}:BURS:TDEL?"))
+            self._check_errors()
+        return result
+
+    def set_burst_gate_polarity(self, channel: int, gate_polarity: GatePolarity) -> None:
+        _check_channel(channel)
+        if not isinstance(gate_polarity, GatePolarity):
+            raise TypeError(f"gate_polarity must be a GatePolarity, got {type(gate_polarity).__name__}")
+        self._write_checked(f":SOUR{channel}:BURS:GATE:POL {gate_polarity.value}")
+
+    def get_burst_gate_polarity(self, channel: int) -> GatePolarity:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = GatePolarity(self._visa.query(f":SOUR{channel}:BURS:GATE:POL?").strip())
+            self._check_errors()
+        return result
+
+    def set_burst_ncycles(self, channel: int, n_cycles: int) -> None:
+        _check_channel(channel)
+        if n_cycles <= 0:
+            raise ValueError(f"n_cycles must be >= 1, got {n_cycles}")
+        self._write_checked(f":SOUR{channel}:BURS:NCYC {int(n_cycles)}")
+
+    def get_burst_ncycles(self, channel: int) -> int:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = int(float(self._visa.query(f":SOUR{channel}:BURS:NCYC?")))
+            self._check_errors()
+        return result
+
+    def set_burst_period(self, channel: int, period: float) -> None:
+        _check_channel(channel)
+        if period <= 0:
+            raise ValueError(f"period must be positive, got {period}")
+        self._write_checked(f":SOUR{channel}:BURS:INT:PER {period}")
+
+    def get_burst_period(self, channel: int) -> float:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = float(self._visa.query(f":SOUR{channel}:BURS:INT:PER?"))
+            self._check_errors()
+        return result
+
+    def set_sweep(self, channel: int, sweep_type: SweepType) -> None:
+        _check_channel(channel)
+        if not isinstance(sweep_type, SweepType):
+            raise TypeError(f"sweep_type must be a SweepType, got {type(sweep_type).__name__}")
+        with self._visa.lock():
+            carrier = self._visa.query(f":SOUR{channel}:FUNC?").strip()
+            self._check_errors()
+            invalid_name = _INVALID_SWEEPS.get(carrier)
+            if invalid_name is not None:
+                raise ValueError(f"the DG1022Z cannot sweep a {invalid_name} on channel {channel}")
+            self._visa.write(f":SOUR{channel}:SWE:SPAC {sweep_type.value}")
+            self._check_errors()
+
+    def get_sweep_type(self, channel: int) -> SweepType:
+        _check_channel(channel)
+        with self._visa.lock():
+            resp = self._visa.query(f":SOUR{channel}:SWE:SPAC?").strip()
+            self._check_errors()
+        result = _SWEEP_SPACING_READBACK.get(resp)
+        if result is None:
+            raise ValueError(f"Rigol DG1022Z reported unsupported sweep type '{resp}'")
+        return result
+
+    def sweep_enable(self, channel: int, enable: bool) -> None:
+        _check_channel(channel)
+        self._write_checked(f":SOUR{channel}:SWE:STAT {'ON' if enable else 'OFF'}")
+
+    def get_sweep_state(self, channel: int) -> bool:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = self._visa.query(f":SOUR{channel}:SWE:STAT?").strip() == "ON"
+            self._check_errors()
+        return result
+
+    def set_sweep_trigger(self, channel: int, source: SweepTriggerSource) -> None:
+        _check_channel(channel)
+        if not isinstance(source, SweepTriggerSource):
+            raise TypeError(f"source must be a SweepTriggerSource, got {type(source).__name__}")
+        self._write_checked(f":SOUR{channel}:SWE:TRIG:SOUR {source.value}")
+
+    def get_sweep_trigger(self, channel: int) -> SweepTriggerSource:
+        _check_channel(channel)
+        with self._visa.lock():
+            resp = self._visa.query(f":SOUR{channel}:SWE:TRIG:SOUR?").strip()
+            self._check_errors()
+        return SweepTriggerSource(resp)
+
+    def set_sweep_start_freq(self, channel: int, frequency_hz: float) -> None:
+        _check_channel(channel)
+        self._write_checked(f":SOUR{channel}:FREQ:STAR {frequency_hz}")
+
+    def get_sweep_start_freq(self, channel: int) -> float:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = float(self._visa.query(f":SOUR{channel}:FREQ:STAR?"))
+            self._check_errors()
+        return result
+
+    def set_sweep_end_freq(self, channel: int, frequency_hz: float) -> None:
+        _check_channel(channel)
+        self._write_checked(f":SOUR{channel}:FREQ:STOP {frequency_hz}")
+
+    def get_sweep_end_freq(self, channel: int) -> float:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = float(self._visa.query(f":SOUR{channel}:FREQ:STOP?"))
+            self._check_errors()
+        return result
+
+    def set_sweep_time(self, channel: int, sweep_time: float) -> None:
+        _check_channel(channel)
+        self._write_checked(f":SOUR{channel}:SWE:TIME {sweep_time}")
+
+    def get_sweep_time(self, channel: int) -> float:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = float(self._visa.query(f":SOUR{channel}:SWE:TIME?"))
+            self._check_errors()
+        return result
+
+    def set_sweep_stop_hold_time(self, channel: int, hold_time: float) -> None:
+        _check_channel(channel)
+        self._write_checked(f":SOUR{channel}:SWE:HTIM {hold_time}")
+
+    def get_sweep_stop_hold_time(self, channel: int) -> float:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = float(self._visa.query(f":SOUR{channel}:SWE:HTIM?"))
+            self._check_errors()
+        return result
+
+    def set_sweep_start_hold_time(self, channel: int, hold_time: float) -> None:
+        _check_channel(channel)
+        self._write_checked(f":SOUR{channel}:SWE:HTIM:STAR {hold_time}")
+
+    def get_sweep_start_hold_time(self, channel: int) -> float:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = float(self._visa.query(f":SOUR{channel}:SWE:HTIM:STAR?"))
+            self._check_errors()
+        return result
+
+    def set_sweep_return_time(self, channel: int, return_time: float) -> None:
+        _check_channel(channel)
+        self._write_checked(f":SOUR{channel}:SWE:RTIM {return_time}")
+
+    def get_sweep_return_time(self, channel: int) -> float:
+        _check_channel(channel)
+        with self._visa.lock():
+            result = float(self._visa.query(f":SOUR{channel}:SWE:RTIM?"))
+            self._check_errors()
+        return result
+
+    def fire_sweep_trigger(self, channel: int) -> None:
+        _check_channel(channel)
+        with self._visa.lock():
+            if not self.get_sweep_state(channel):
+                raise ValueError(
+                    f"Cannot fire a sweep trigger on channel {channel} unless sweep mode is already"
+                    " enabled, call sweep_enable(channel, True) first"
+                )
+            source = self.get_sweep_trigger(channel)
+            if source is not SweepTriggerSource.MANUAL:
+                raise ValueError(
+                    f"Cannot fire a sweep trigger on channel {channel} unless the trigger source is"
+                    f" already MANUAL, call set_sweep_trigger(channel, SweepTriggerSource.MANUAL) first. Got: {source.name}"
+                )
+            self._write_checked(f":SOUR{channel}:SWE:TRIG")
 
     def _write_frequency_and_phase(self, channel: int, frequency_hz: float, phase_deg: float) -> None:
         self._visa.write(f":SOUR{channel}:FREQ {frequency_hz}")
