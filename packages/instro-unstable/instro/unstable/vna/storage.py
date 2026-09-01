@@ -27,7 +27,6 @@ class DiskStorage(Storage):
         else:
             # get a temp dir
             self.storage_path = Path(tempfile.mkdtemp())
-        self.storage_format = format
 
     def get_path_for_filename(self, filename: str | Path) -> Path:
         """Get the path to the file for the specified name."""
