@@ -104,3 +104,35 @@ def test_04_instro_sdr_safely_wraps_driver_methods() -> None:
     assert "rtl.i" in measurement.channel_data
     assert measurement.channel_data["rtl.i"][0] == pytest.approx(1.0)
     assert measurement.channel_data["rtl.q"][1] == pytest.approx(4.0)
+
+
+@pytest.mark.parametrize(
+    ("getter_name", "descriptor", "initial_value"),
+    [
+        ("get_center_freq", "center_freq", 100_000_000.0),
+        ("get_sample_rate", "sample_rate", 2_400_000.0),
+        ("get_gain", "gain", 20.0),
+        ("get_bandwidth", "bandwidth", 1_000_000.0),
+    ],
+)
+def test_05_instro_sdr_getters_publish_as_measurement(getter_name: str, descriptor: str, initial_value: float) -> None:
+    """A read publishes as Measurement, not Command -- same categorical convention as every other category."""
+    driver = _MinimalSDRDriver()
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    measurement = getattr(sdr, getter_name)()
+
+    assert measurement.channel_data == {f"rtl.{descriptor}": [initial_value]}
+
+
+def test_06_instro_sdr_getters_publish_to_attached_publishers() -> None:
+    published = []
+    publisher = MagicMock()
+    publisher.publish.side_effect = lambda data, **kwargs: published.append(data)
+    driver = _MinimalSDRDriver()
+    sdr = InstroSDR(name="rtl", driver=driver, publishers=[publisher])
+
+    sdr.get_gain()
+
+    assert len(published) == 1
+    assert published[0].channel_data == {"rtl.gain": [20.0]}

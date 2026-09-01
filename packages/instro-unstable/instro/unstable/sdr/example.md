@@ -17,7 +17,7 @@ sdr = InstroSDR(
 # measure
 sdr.set_center_freq(f_center)
 sdr.set_sample_rate(f_bw)
-fs = sdr.get_sample_rate()
+fs = sdr.get_sample_rate().latest
 iq = sdr.measure_iq(n_samples = 1048576 )
 sdr.close()
 
