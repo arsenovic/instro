@@ -124,10 +124,11 @@ class NanoVNAv2Clone(VNADriverBase):
         return np.array(complex_data)
 
     def get_smat(self, m: int, n: int, ch: int | None = None) -> np.ndarray:
+        """Get one S-parameter; the NanoVNA measures only S11/S21, so other terms are zero-filled."""
         if (m, n) == (0, 0):
             return self.get_channel_data(array_index=0)
         elif (m, n) == (1, 0):
             return self.get_channel_data(array_index=1)
         else:
-            # TODO: add a warning?
+            # 1.5-port instrument: S12/S22 aren't measurable; zero-fill to keep a standard 2-port network shape
             return np.zeros(self.get_freq_npoints())
