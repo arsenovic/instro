@@ -32,21 +32,7 @@ def hint_returns_numeric(func):
 
 
 class VNADriverBase(abc.ABC):
-    """Base class for VNA drivers.
-
-    Required abstract methods:
-        - ``get_freq_start(ch: int | None = None) -> float``
-        - ``get_freq_stop(ch: int | None = None) -> float``
-        - ``get_freq_npoints(ch: int | None = None) -> int``
-        - ``get_nports(ch: int | None = None) -> int``
-        - ``get_smat(m: int, n: int, ch: int | None = None) -> np.ndarray``
-
-    Notes:
-    -----
-    This is a flat representation with regard to channels, meaning it does
-    not use nested channel objects; instead, ``ch`` is a simple argument to
-    all relevant methods.
-    """
+    """Base class for VNA drivers; channels are flat — ``ch`` is a plain argument on all relevant methods."""
 
     # TODO: have a clever way to pass `ch` everwhere without seeing it all the time
     # maybe a `channalize` decorator
@@ -159,19 +145,7 @@ class VNADriverBase(abc.ABC):
         ch: int | None = None,
         **kw,
     ) -> skrf.Network:
-        """Get a network from the VNA as an ``skrf.Network`` object.
-
-        Args:
-            ports: Port indices to include in the network. If ``None``, all
-                ports reported by the instrument are used.
-            ch: Channel number to query. If ``None``, the active channel is
-                used when supported.
-            **kw: Additional keyword arguments passed to the underlying
-                ``skrf.Network`` constructor.
-
-        Returns:
-            A network object containing the measured S-parameters.
-        """
+        """Get an ``skrf.Network`` of the measured S-parameters; ``ports=None`` uses all instrument ports."""
         frequency = self.get_frequency(ch=ch)
         if ports is None:
             ports = range(self.get_nports(ch=ch))
@@ -185,18 +159,7 @@ class VNADriverBase(abc.ABC):
         return network
 
     def get_s(self, m: int, n: int, ch: int | None = None, **kw) -> skrf.Network:
-        """Get a single S-parameter as a one-port network object.
-
-        Args:
-            m: Row index of the S-parameter (0-based).
-            n: Column index of the S-parameter (0-based).
-            ch: Channel number to query. If ``None``, the active channel is
-                used when supported.
-            **kw: Extra keyword arguments forwarded to ``skrf.Network``.
-
-        Returns:
-            A one-port network containing the selected S-parameter.
-        """
+        """Get a single S-parameter (0-based row m, column n) as a one-port network."""
         frequency = self.get_frequency(ch=ch)
         s = self.get_smat(m, n, ch=ch)
         network = skrf.Network(frequency=frequency, s=s[:, np.newaxis, np.newaxis], **kw)
@@ -228,40 +191,7 @@ class InstroVNA(Instrument):
         storage: Storage | None = None,
         **kwargs,
     ):
-        """High-level VNA wrapper around a vendor driver.
-
-        This class exposes the underlying driver through the Instro instrument
-        interface and wraps numeric getter calls as published measurements.
-
-        Args:
-            name: Human-readable name for the instrument.
-            driver: Vendor-specific VNA driver implementing the
-                ``VNADriverBase`` interface.
-            publishers: Optional publishers for measurements and commands.
-            storage: Storage backend used for saving network data.
-            **kwargs: Extra keyword arguments passed to the base
-                ``Instrument`` initializer.
-
-        Examples:
-        --------
-        >>> from instro.unstable.vna.vna import InstroVNA
-        >>> from instro.unstable.vna.drivers.nanovna_v2clone import NanoVNAv2Clone
-        >>> from instro.unstable.vna.storage import DiskStorage
-        >>>
-        >>> vna = InstroVNA(
-        ...     name='bob',
-        ...     driver=NanoVNAv2Clone(port='/dev/ttyACM0'),
-        ...     storage=DiskStorage(),  # default path is a tempdir
-        ... )
-        >>> network = vna.get_network()
-        >>> path = vna.save_network('billy')
-
-        Notes:
-        -----
-        Any method on ``driver`` whose name starts with ``get_`` and whose return
-        annotation is numeric is wrapped and published as an Instro
-        ``Measurement``.
-        """
+        """High-level VNA wrapper around a vendor driver; see ``examples/vna/`` for usage."""
         super().__init__(name, publishers=publishers, **kwargs)
         self._driver = driver
         self._resource_lock = threading.Lock()
