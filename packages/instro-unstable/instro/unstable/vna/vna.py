@@ -106,11 +106,16 @@ class VNADriverBase(abc.ABC):
     def get_frequency(
         self,
         ch: int | None = None,
-        unit: str = "ghz",  # TODO: this should be validated
-        sweep_type: SweepType = SweepType.LIN,
+        unit: str = "hz",
+        sweep_type: SweepType | str = SweepType.LIN,
     ) -> skrf.Frequency:
         """Get the frequency of the VNA."""
+        # skrf's unit setter doesn't validate; check here so a typo fails at the call site
+        if unit.lower() not in skrf.Frequency.unit_dict:
+            raise ValueError(f"invalid frequency unit {unit!r}; expected one of {list(skrf.Frequency.unit_dict)}")
+        sweep_type = SweepType(sweep_type)
         if sweep_type == SweepType.LIN:
+            # drivers report Hz; construct in Hz, then set the display unit (does not rescale)
             frequency = skrf.Frequency(
                 start=self.get_freq_start(ch=ch),
                 stop=self.get_freq_stop(ch=ch),

@@ -40,3 +40,11 @@ def test_instro_vna_save_network_writes_touchstone_file(vna: InstroVNA, tmp_path
 
     assert saved_path.name.endswith(".s2p")
     assert saved_path.exists()
+
+
+def test_instro_vna_get_frequency_validates_unit_and_coerces_sweep_type(vna: InstroVNA) -> None:
+    with pytest.raises(ValueError, match="invalid frequency unit"):
+        vna.driver.get_frequency(unit="gigahurts")
+
+    frequency = vna.driver.get_frequency(sweep_type="LIN")
+    assert frequency.unit == "Hz"
