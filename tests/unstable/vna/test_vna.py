@@ -7,6 +7,8 @@ from unittest import mock
 
 import pytest
 
+from instro.lib import InstroError
+from instro.unstable.vna.drivers.nanovna_v2clone import NanoVNAv2Clone
 from instro.unstable.vna.storage import DiskStorage
 from instro.unstable.vna.types import NetworkFileFormat
 from instro.unstable.vna.vna import InstroVNA
@@ -50,6 +52,17 @@ def test_instro_vna_open_and_close_delegate_to_driver(vna: InstroVNA) -> None:
 
     driver_open.assert_called_once()
     driver_close.assert_called_once()
+
+
+def test_nanovna_get_f_raises_on_empty_reply() -> None:
+    with (
+        mock.patch("instro.unstable.vna.drivers.nanovna_v2clone.serial.Serial", autospec=True),
+        mock.patch("instro.unstable.vna.drivers.nanovna_v2clone.time.sleep"),
+    ):
+        driver = NanoVNAv2Clone(port="loop://")
+        with mock.patch.object(driver, "_read_lines", return_value=[]):
+            with pytest.raises(InstroError, match="no frequency data"):
+                driver.get_f()
 
 
 def test_instro_vna_execute_command_programs_driver_setter(vna: InstroVNA) -> None:

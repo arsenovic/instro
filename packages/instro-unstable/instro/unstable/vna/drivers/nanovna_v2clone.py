@@ -94,6 +94,8 @@ class NanoVNAv2Clone(VNADriverBase):
             except ValueError:
                 continue
 
+        if not freqs:
+            raise InstroError("NanoVNA returned no frequency data (check connection and port)")
         return np.array(freqs)
 
     def get_nports(self, ch: int | None = None) -> int:
