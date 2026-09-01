@@ -17,7 +17,7 @@ from __future__ import annotations
 import abc
 import threading
 import time
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -160,6 +160,14 @@ class InstroSDR(Instrument):
             tags={**self.default_tags, **kwargs},
         )
 
+    @publish_measurement
+    def _execute_measurement(self, driver_method: Callable[[], float], descriptor: str, **kwargs: Any) -> Measurement:
+        """Execute a no-argument driver read and return a Measurement for the value."""
+        with self._resource_lock:
+            val = driver_method()
+            timestamp = time.time_ns()
+        return self._package_measurement(descriptor, val, timestamp, **kwargs)
+
     def set_center_freq(self, frequency_hz: float, **kwargs: Any):
         """Set RF center frequency and publish the command."""
         with self._resource_lock:
@@ -167,9 +175,9 @@ class InstroSDR(Instrument):
             timestamp = time.time_ns()
         return self._package_command("center_freq.cmd", float(frequency_hz), timestamp, **kwargs)
 
-    def get_center_freq(self) -> float:
-        """Return the current RF center frequency."""
-        return self._driver.get_center_freq()
+    def get_center_freq(self, **kwargs: Any) -> Measurement:
+        """Query the current RF center frequency in Hz."""
+        return self._execute_measurement(self._driver.get_center_freq, "center_freq", **kwargs)
 
     def set_sample_rate(self, sample_rate_hz: float, **kwargs: Any):
         """Set the sample rate and publish the command."""
@@ -178,9 +186,9 @@ class InstroSDR(Instrument):
             timestamp = time.time_ns()
         return self._package_command("sample_rate.cmd", float(sample_rate_hz), timestamp, **kwargs)
 
-    def get_sample_rate(self) -> float:
-        """Return the current sample rate."""
-        return self._driver.get_sample_rate()
+    def get_sample_rate(self, **kwargs: Any) -> Measurement:
+        """Query the current sample rate in samples per second."""
+        return self._execute_measurement(self._driver.get_sample_rate, "sample_rate", **kwargs)
 
     def set_gain(self, gain_db: float, **kwargs: Any):
         """Set the gain in dB and publish the command."""
@@ -189,9 +197,9 @@ class InstroSDR(Instrument):
             timestamp = time.time_ns()
         return self._package_command("gain.cmd", float(gain_db), timestamp, **kwargs)
 
-    def get_gain(self) -> float:
-        """Return the current gain in dB."""
-        return self._driver.get_gain()
+    def get_gain(self, **kwargs: Any) -> Measurement:
+        """Query the current gain in dB."""
+        return self._execute_measurement(self._driver.get_gain, "gain", **kwargs)
 
     def set_bandwidth(self, bandwidth_hz: float, **kwargs: Any):
         """Set the bandwidth in Hz and publish the command."""
@@ -200,9 +208,9 @@ class InstroSDR(Instrument):
             timestamp = time.time_ns()
         return self._package_command("bandwidth.cmd", float(bandwidth_hz), timestamp, **kwargs)
 
-    def get_bandwidth(self) -> float:
-        """Return the current bandwidth in Hz."""
-        return self._driver.get_bandwidth()
+    def get_bandwidth(self, **kwargs: Any) -> Measurement:
+        """Query the current IF or filter bandwidth in Hz."""
+        return self._execute_measurement(self._driver.get_bandwidth, "bandwidth", **kwargs)
 
     def __getattr__(self, name: str):
         """Delegate unknown attributes to the underlying driver."""
