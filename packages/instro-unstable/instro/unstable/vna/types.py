@@ -10,6 +10,3 @@ class SweepType(Enum):
 
 class NetworkFileFormat(Enum):
     SNP = "SNP"
-    JSON = "JSON"
-    CSV = "CSV"
-    CITI = "CITI"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -40,6 +41,15 @@ def test_instro_vna_save_network_writes_touchstone_file(vna: InstroVNA, tmp_path
 
     assert saved_path.name.endswith(".s2p")
     assert saved_path.exists()
+
+
+def test_instro_vna_open_and_close_delegate_to_driver(vna: InstroVNA) -> None:
+    with mock.patch.object(vna.driver, "open") as driver_open, mock.patch.object(vna.driver, "close") as driver_close:
+        vna.open()
+        vna.close()
+
+    driver_open.assert_called_once()
+    driver_close.assert_called_once()
 
 
 def test_instro_vna_get_frequency_validates_unit_and_coerces_sweep_type(vna: InstroVNA) -> None:

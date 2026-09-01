@@ -51,6 +51,14 @@ class VNADriverBase(abc.ABC):
     # TODO: have a clever way to pass `ch` everwhere without seeing it all the time
     # maybe a `channalize` decorator
     @abc.abstractmethod
+    def open(self) -> None:
+        """Open the underlying transport."""
+
+    @abc.abstractmethod
+    def close(self) -> None:
+        """Close the underlying transport. Idempotent."""
+
+    @abc.abstractmethod
     def get_freq_start(self, ch: int | None = None) -> float:
         """Get the start frequency of the VNA in Hz."""
 
@@ -246,8 +254,7 @@ class InstroVNA(Instrument):
         ...     storage=DiskStorage(),  # default path is a tempdir
         ... )
         >>> network = vna.get_network()
-        >>> vna.save_network('billy')
-        >>> vna.measure_network()
+        >>> path = vna.save_network('billy')
 
         Notes:
         -----
@@ -259,6 +266,17 @@ class InstroVNA(Instrument):
         self._driver = driver
         self._resource_lock = threading.Lock()
         self._storage = storage if storage is not None else DiskStorage()
+
+    def open(self) -> None:
+        """Open the underlying driver."""
+        logger.info("Opening VNA '%s'", self.name)
+        self._driver.open()
+
+    def close(self) -> None:
+        """Close the underlying driver and stop the daemon."""
+        logger.info("Closing VNA '%s'", self.name)
+        super().close()
+        self._driver.close()
 
     # this is general and should be inherited
     @publish_measurement
