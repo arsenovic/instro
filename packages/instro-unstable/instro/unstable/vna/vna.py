@@ -174,7 +174,7 @@ class VNADriverBase(abc.ABC):
         """
         frequency = self.get_frequency(ch=ch)
         if ports is None:
-            ports = range(self.get_nports())
+            ports = range(self.get_nports(ch=ch))
 
         # iterate over ports and populate the s-parameter matrix
         s = np.zeros((len(frequency.f), len(ports), len(ports)), dtype=complex)
