@@ -101,25 +101,28 @@ class RigolDG1022Z(AWGDriverBase):
                 self._visa.write(f":SOUR{channel}:FREQ {waveform.frequency_hz}")
                 self._visa.write(f":SOUR{channel}:FUNC:PULS:WIDT {waveform.width_s}")
             elif isinstance(waveform, Arbitrary):
-                # Use per-point downloads to allow both USB and Ethernet compatibility and a higher download size ceiling.
                 num_points = len(waveform.samples)
                 if not _ARB_MIN_POINTS <= num_points <= _ARB_MAX_POINTS:
                     raise ValueError(
                         f"the DG1022Z accepts {_ARB_MIN_POINTS} to {_ARB_MAX_POINTS} arbitrary points"
                         f" per download, got {num_points}"
                     )
-                self._write_checked(f":SOUR{channel}:APPL:ARB {waveform.sample_rate_hz}")
+                self._write_checked(f":SOUR{channel}:FUNCtion:ARBitrary:MODE SRATE")
+                self._write_checked(f":SOUR{channel}:FUNC:ARB:SRAT {waveform.sample_rate_sas}")
                 bulk_command = None
                 if self._arb_bulk_supported:
                     data = ",".join(str(sample) for sample in waveform.samples)
-                    bulk_command = f":SOUR{channel}:TRAC:DATA VOLATILE,{data}"
+                    bulk_command = f":SOUR{channel}:TRAC:DATA VOLATILE,{data}"  # sets waveform to ARB automatically
                 if (
                     bulk_command is not None
                     and len((bulk_command + self._write_terminator).encode()) < _ARB_BULK_COMMAND_MAX_BYTES
                 ):
                     self._write_checked(bulk_command)
                 else:
-                    self._write_checked(f":SOUR{channel}:TRAC:DATA:POIN VOLATILE,{num_points}")
+                    # Per-point downloads work on both USB and Ethernet and lift the bulk download size ceiling.
+                    self._write_checked(
+                        f":SOUR{channel}:TRAC:DATA:POIN VOLATILE,{num_points}"
+                    )  # sets waveform to ARB automatically
                     for point, sample in enumerate(waveform.samples, start=1):
                         decimal_value = round((sample + 1) / 2 * 16383)
                         # error queue is not drained, so checking every point avoids lost error messages in exchange for a longer runtime
