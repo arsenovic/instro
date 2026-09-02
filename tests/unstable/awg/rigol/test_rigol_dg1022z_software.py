@@ -227,13 +227,14 @@ def test_07_set_waveform_arbitrary_uses_bulk_download_for_small_lan_payload(
 ) -> None:
     rigol_visa.query.return_value = '0,"No error"'
 
-    rigol.set_waveform(1, Arbitrary(samples=_ARB_SAMPLES, sample_rate_hz=1000000.0))
+    rigol.set_waveform(1, Arbitrary(samples=_ARB_SAMPLES, sample_rate_sas=1000000.0))
 
     assert rigol_visa.write.call_args_list == [
-        call(":SOUR1:APPL:ARB 1000000.0"),
+        call(":SOUR1:FUNCtion:ARBitrary:MODE SRATE"),
+        call(":SOUR1:FUNC:ARB:SRAT 1000000.0"),
         call(":SOUR1:TRAC:DATA VOLATILE,0.0,0.5,1.0,-1.0,0.25,-0.25,0.75,-0.75,0.125"),
     ]
-    assert rigol_visa.query.call_count == 2
+    assert rigol_visa.query.call_count == 3
 
 
 def test_set_waveform_arbitrary_uses_per_point_download_for_usb(
@@ -242,10 +243,11 @@ def test_set_waveform_arbitrary_uses_per_point_download_for_usb(
 ) -> None:
     rigol = RigolDG1022Z("USB0::0x1AB1::0x0642::DG1ZA000000000::INSTR")
 
-    rigol.set_waveform(1, Arbitrary(samples=_ARB_SAMPLES, sample_rate_hz=1000000.0))
+    rigol.set_waveform(1, Arbitrary(samples=_ARB_SAMPLES, sample_rate_sas=1000000.0))
 
     assert rigol_visa.write.call_args_list == [
-        call(":SOUR1:APPL:ARB 1000000.0"),
+        call(":SOUR1:FUNCtion:ARBitrary:MODE SRATE"),
+        call(":SOUR1:FUNC:ARB:SRAT 1000000.0"),
         call(":SOUR1:TRAC:DATA:POIN VOLATILE,9"),
         call(":SOUR1:TRAC:DATA:VAL VOLATILE,1,8192"),
         call(":SOUR1:TRAC:DATA:VAL VOLATILE,2,12287"),
@@ -257,23 +259,41 @@ def test_set_waveform_arbitrary_uses_per_point_download_for_usb(
         call(":SOUR1:TRAC:DATA:VAL VOLATILE,8,2048"),
         call(":SOUR1:TRAC:DATA:VAL VOLATILE,9,9215"),
     ]
-    assert rigol_visa.query.call_count == 11
+    assert rigol_visa.query.call_count == 12
 
 
 def test_set_waveform_arbitrary_uses_per_point_download_for_oversized_lan_payload(
     rigol: RigolDG1022Z,
     rigol_visa: MagicMock,
 ) -> None:
-    rigol.set_waveform(1, Arbitrary(samples=_OVERSIZED_ARB_SAMPLES, sample_rate_hz=1000000.0))
+    rigol.set_waveform(1, Arbitrary(samples=_OVERSIZED_ARB_SAMPLES, sample_rate_sas=1000000.0))
 
     commands = rigol_visa.write.call_args_list
-    assert commands[:2] == [
-        call(":SOUR1:APPL:ARB 1000000.0"),
+    assert commands[:3] == [
+        call(":SOUR1:FUNCtion:ARBitrary:MODE SRATE"),
+        call(":SOUR1:FUNC:ARB:SRAT 1000000.0"),
         call(":SOUR1:TRAC:DATA:POIN VOLATILE,1600"),
     ]
-    assert len(commands) == 1602
+    assert len(commands) == 1603
     assert all(":TRAC:DATA VOLATILE," not in command.args[0] for command in commands)
-    assert rigol_visa.query.call_count == 1602
+    assert rigol_visa.query.call_count == 1603
+
+
+def test_set_waveform_arbitrary_uses_per_point_download_for_oversized_lan_payload(
+    rigol: RigolDG1022Z,
+    rigol_visa: MagicMock,
+) -> None:
+    rigol.set_waveform(1, Arbitrary(samples=_OVERSIZED_ARB_SAMPLES, sample_rate_sas=1000000.0))
+
+    commands = rigol_visa.write.call_args_list
+    assert commands[:3] == [
+        call(":SOUR1:FUNCtion:ARBitrary:MODE SRATE"),
+        call(":SOUR1:FUNC:ARB:SRAT 1000000.0"),
+        call(":SOUR1:TRAC:DATA:POIN VOLATILE,1600"),
+    ]
+    assert len(commands) == 1603
+    assert all(":TRAC:DATA VOLATILE," not in command.args[0] for command in commands)
+    assert rigol_visa.query.call_count == 1603
 
 
 @pytest.mark.parametrize("num_points", [2, 16385], ids=["too_few", "too_many"])
@@ -282,7 +302,7 @@ def test_08_set_waveform_arbitrary_rejects_bad_point_counts(
     rigol_visa: MagicMock,
     num_points: int,
 ) -> None:
-    waveform = Arbitrary(samples=(0.0,) * num_points, sample_rate_hz=1000000.0)
+    waveform = Arbitrary(samples=(0.0,) * num_points, sample_rate_sas=1000000.0)
 
     with pytest.raises(ValueError, match="9 to 16384 arbitrary points"):
         rigol.set_waveform(1, waveform)
@@ -342,7 +362,7 @@ def test_09_get_waveform_parses_shape_specific_fields(
 def test_10_get_waveform_arbitrary_cache_and_unknown_shape_edge_cases(
     rigol: RigolDG1022Z, rigol_visa: MagicMock
 ) -> None:
-    arbitrary = Arbitrary(samples=_ARB_SAMPLES, sample_rate_hz=1000000.0)
+    arbitrary = Arbitrary(samples=_ARB_SAMPLES, sample_rate_sas=1000000.0)
     rigol.set_waveform(1, arbitrary)
 
     # Channel 1 outputs USER and the driver has the samples cached from set_waveform above.
@@ -560,7 +580,7 @@ def test_18_set_modulation_writes_type_specific_commands(
 ) -> None:
     if carrier_response == _ARBITRARY_CARRIER_APPL_RESPONSE:
         rigol_visa.query.return_value = '0,"No error"'
-        rigol.set_waveform(1, Arbitrary(samples=_ARB_SAMPLES, sample_rate_hz=1000000.0))
+        rigol.set_waveform(1, Arbitrary(samples=_ARB_SAMPLES, sample_rate_sas=1000000.0))
         rigol_visa.write.reset_mock()
     _mock_carrier_query(rigol_visa, carrier_response)
 
