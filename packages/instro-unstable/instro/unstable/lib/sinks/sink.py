@@ -1,12 +1,13 @@
 import abc
 import threading
-from typing import Iterator, Any
+from typing import Any, Iterator
 
 from instro.unstable.lib.consumers import Consumer
 
+
 class Sink(abc.ABC):
-    """Abstract base class for data sinks. Handles threading and lifecycle."""
-    
+    """Abstract base class for data sinks. """
+
     def __init__(self):
         self._running = False
         self._thread = None
@@ -16,13 +17,9 @@ class Sink(abc.ABC):
         if self._thread and self._thread.is_alive():
             print(f"{self.__class__.__name__} is already running.")
             return
-            
+
         self._running = True
-        self._thread = threading.Thread(
-            target=self._consume_loop, 
-            args=(consumer.consume(),),
-            daemon=True
-        )
+        self._thread = threading.Thread(target=self._consume_loop, args=(consumer.consume(),), daemon=True)
         self._thread.start()
 
     def stop(self):

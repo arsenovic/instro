@@ -6,14 +6,14 @@ objects emitted by a publisher without imposing any domain-specific behavior.
 
 import abc
 import logging
-from typing import Callable, Protocol, Any
+from typing import Any, Callable, Protocol
 
 from instro.lib.types import Command, Measurement
 
 logger = logging.getLogger(__name__)
- 
 
-class  Consumer(abc.ABC):
+
+class Consumer(abc.ABC):
     """Abstract Consumer ."""
 
     @abc.abstractmethod
@@ -31,8 +31,7 @@ class  Consumer(abc.ABC):
         """Close the source after reading is complete."""
         raise NotImplementedError("close() is not implemented")
 
-    
-    def is_measurement_record(self,data: dict[str, Any]) -> bool:
+    def is_measurement_record(self, data: dict[str, Any]) -> bool:
         """Return True when the given record looks like a Measurement.
 
         This is a small standalone predicate so callers can change the
@@ -40,12 +39,10 @@ class  Consumer(abc.ABC):
         """
         return "timestamps" in data and "channel_data" in data
 
-    
-    def is_command_record(self,data: dict[str, Any]) -> bool:
+    def is_command_record(self, data: dict[str, Any]) -> bool:
         """Return True when the given record looks like a Command."""
         return "timestamp" in data and "channel_data" in data
 
-    
     def record_to_object(self, data: dict[str, Any]) -> Measurement | Command:
         """Convert a plain dict record into a `Measurement` or `Command`.
 
@@ -57,5 +54,3 @@ class  Consumer(abc.ABC):
         if self.is_command_record(data):
             return Command(**data)
         raise TypeError(f"Unsupported record: {data!r}")
-
- 
