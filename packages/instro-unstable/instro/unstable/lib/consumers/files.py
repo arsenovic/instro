@@ -20,7 +20,7 @@ class FileFormats(Enum):
 class FileConsumer(Consumer):
     """File-based consumer for reading data produced by FilePublisher."""
 
-    def __init__(self, file_path: Path, poll_s: float = 1.0, format: FileFormats = FileFormats.JSON):
+    def __init__(self, file_path: Path, poll_s: float = 1.0, format: FileFormats = FileFormats.JSONL):
         self.file_path = Path(file_path)
         self.poll_s = poll_s
         self.format = format

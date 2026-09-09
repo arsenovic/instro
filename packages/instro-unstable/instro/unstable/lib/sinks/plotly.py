@@ -4,7 +4,8 @@ from typing import Any
 
 import numpy as np
 import plotly.graph_objects as go
-from IPython.display import display
+from plotly.graph_objs._figurewidget import FigureWidget
+from typing import Union, Optional
 
 from instro.lib.types import Measurement
 
@@ -14,17 +15,17 @@ from .sink import Sink
 class PlotlyLiveSink(Sink):
     """A Sink that updates a Plotly FigureWidget with incoming measurements."""
 
-    def __init__(self, window: int = 50, poll_s: float = 0.01):
+    def __init__(self, window: int = 50, poll_s: float = 0.01, fig: FigureWidget | None = None):
         super().__init__()
         self.window = window
         self.poll_s = poll_s
         self.channel_state = {}
 
-        self.fig = go.FigureWidget(
+        self.fig = fig if fig is not None else go.FigureWidget(
             layout=dict(
                 xaxis=dict(type="date", tickformat="%H:%M:%S", tickangle=-45),
                 autosize=True,
-                height=600,
+                height=300,
                 margin=dict(l=10, r=10, b=60, t=60),
             )
         )

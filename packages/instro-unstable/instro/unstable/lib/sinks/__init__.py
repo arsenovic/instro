@@ -1,4 +1,4 @@
 from .plotly import PlotlyLiveSink
 from .sink import Sink
-
-__all__ = ["Sink", "PlotlyLiveSink"]
+from .sqlite import SQLiteSink
+__all__ = ["Sink", "PlotlyLiveSink", "SQLiteSink"]
