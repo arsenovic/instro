@@ -85,15 +85,24 @@ def test_02_instro_sdr_measure_iq_packages_a_buffer_as_measurement() -> None:
     assert measurement.channel_data["rtl.q"][-1] == pytest.approx(2.0)
 
 
-def test_03_instro_sdr_measure_spectrum_returns_power_summary() -> None:
-    driver = _MinimalSDRDriver()
-    sdr = InstroSDR(name="rtl", driver=driver)
+def test_03_instro_sdr_measure_spectrum_publishes_one_scalar_per_channel() -> None:
+    """Regression: the summary emitted 5 values against 1 timestamp, which no publisher can zip."""
+    published = []
+    publisher = MagicMock()
+    publisher.publish.side_effect = lambda data, **kwargs: published.append(data)
+    sdr = InstroSDR(name="rtl", driver=_MinimalSDRDriver(), publishers=[publisher])
 
-    measurement = sdr.measure_spectrum(n_samples=8)
+    measurement = sdr.measure_spectrum(n_samples=1024)
 
-    assert "rtl.spectrum" in measurement.channel_data
-    assert len(measurement.channel_data["rtl.spectrum"]) == 5
-    assert all(value >= 0.0 for value in measurement.channel_data["rtl.spectrum"])
+    assert published == [measurement]
+    assert set(measurement.channel_data) == {
+        "rtl.spectrum.peak_power_db",
+        "rtl.spectrum.peak_freq_hz",
+        "rtl.spectrum.mean_power_db",
+        "rtl.spectrum.occupied_bw_hz",
+    }
+    assert len(measurement.timestamps) == 1
+    assert all(len(values) == 1 for values in measurement.channel_data.values())
 
 
 def test_04_instro_sdr_safely_wraps_driver_methods() -> None:
@@ -248,3 +257,46 @@ def test_13_measure_iq_warns_once_on_a_sub_nanosecond_sample_period(caplog) -> N
 
     assert len(measurement.channel_data["rtl.i"]) == 8
     assert len([r for r in caplog.records if "1 GSa/s" in r.getMessage()]) == 1
+
+
+class _ToneSDRDriver(_MinimalSDRDriver):
+    """Emits a single complex tone offset from the centre frequency."""
+
+    def __init__(self, offset_hz: float) -> None:
+        super().__init__()
+        self._offset_hz = offset_hz
+
+    def read_iq(self, n_samples: int) -> np.ndarray:
+        n = np.arange(n_samples)
+        return np.exp(2j * np.pi * self._offset_hz * n / self._sample_rate_hz)
+
+
+def test_14_measure_spectrum_locates_a_tone_at_its_true_frequency() -> None:
+    """Regression: the old summary was |z|^2 resampled to 5 points -- no FFT, no frequency axis."""
+    offset_hz = 300_000.0
+    sdr = InstroSDR(name="rtl", driver=_ToneSDRDriver(offset_hz))
+
+    measurement = sdr.measure_spectrum(n_samples=1024)
+
+    bin_width_hz = 2_400_000.0 / 1024
+    assert measurement.channel_data["rtl.spectrum.peak_freq_hz"][0] == pytest.approx(
+        100_000_000.0 + offset_hz, abs=bin_width_hz
+    )
+    peak_db = measurement.channel_data["rtl.spectrum.peak_power_db"][0]
+    assert peak_db > measurement.channel_data["rtl.spectrum.mean_power_db"][0] + 20
+    assert measurement.channel_data["rtl.spectrum.occupied_bw_hz"][0] < 10 * bin_width_hz
+
+
+def test_15_compute_psd_returns_the_array_without_publishing() -> None:
+    """The full spectrum is caller-facing only; it must not reach publishers."""
+    published = []
+    publisher = MagicMock()
+    publisher.publish.side_effect = lambda data, **kwargs: published.append(data)
+    sdr = InstroSDR(name="rtl", driver=_ToneSDRDriver(300_000.0), publishers=[publisher])
+
+    freqs, power_db = sdr.compute_psd(n_samples=1024)
+
+    assert published == []
+    assert freqs.shape == power_db.shape == (1024,)
+    assert np.all(np.diff(freqs) > 0)
+    assert freqs[int(np.argmax(power_db))] == pytest.approx(100_300_000.0, abs=2_400_000.0 / 1024)
