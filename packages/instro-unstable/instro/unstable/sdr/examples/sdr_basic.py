@@ -43,7 +43,7 @@ try:
 
     # Reassemble the complex signal: I is the real part, Q the imaginary part.
     # Swapping them conjugates the signal and mirrors the spectrum about the center.
-    z = np.asarray(iq.channel_data["rtl.i"]) + 1j * np.asarray(iq.channel_data["rtl.q"])
+    z = np.asarray(iq.channel_data["rtl.rx0.i"]) + 1j * np.asarray(iq.channel_data["rtl.rx0.q"])
     print(f"mean power {10 * np.log10(np.mean(np.abs(z) ** 2)):.1f} dB")
 
     # Scalar spectral features, published as four time-series channels.

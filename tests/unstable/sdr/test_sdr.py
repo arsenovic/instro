@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from instro.lib import Command
-from instro.unstable.sdr import InstroSDR, IQCapture, SDRDriverBase
+from instro.unstable.sdr import Direction, InstroSDR, IQCapture, SDRDriverBase
 
 
 class _MinimalSDRDriver(SDRDriverBase):
@@ -27,31 +27,31 @@ class _MinimalSDRDriver(SDRDriverBase):
     def close(self) -> None:
         pass
 
-    def set_center_freq(self, frequency_hz: float) -> None:
+    def set_center_freq(self, frequency_hz: float, **kwargs) -> None:
         self._center_freq_hz = float(frequency_hz)
 
-    def get_center_freq(self) -> float:
+    def get_center_freq(self, **kwargs) -> float:
         return self._center_freq_hz
 
-    def set_sample_rate(self, sample_rate_hz: float) -> None:
+    def set_sample_rate(self, sample_rate_hz: float, **kwargs) -> None:
         self._sample_rate_hz = float(sample_rate_hz)
 
-    def get_sample_rate(self) -> float:
+    def get_sample_rate(self, **kwargs) -> float:
         return self._sample_rate_hz
 
-    def set_gain(self, gain_db: float) -> None:
+    def set_gain(self, gain_db: float, **kwargs) -> None:
         self._gain_db = float(gain_db)
 
-    def get_gain(self) -> float:
+    def get_gain(self, **kwargs) -> float:
         return self._gain_db
 
-    def set_bandwidth(self, bandwidth_hz: float) -> None:
+    def set_bandwidth(self, bandwidth_hz: float, **kwargs) -> None:
         self._bandwidth_hz = float(bandwidth_hz)
 
-    def get_bandwidth(self) -> float:
+    def get_bandwidth(self, **kwargs) -> float:
         return self._bandwidth_hz
 
-    def read_iq(self, n_samples: int) -> IQCapture:
+    def read_iq(self, n_samples: int, **kwargs) -> IQCapture:
         base = np.linspace(0, 1, n_samples, dtype=float)
         samples = base.astype(np.complex128) + 1j * (base * 2.0)
         return IQCapture(
@@ -84,11 +84,11 @@ def test_02_instro_sdr_measure_iq_packages_a_buffer_as_measurement() -> None:
 
     measurement = sdr.measure_iq(n_samples=8)
 
-    assert measurement.channel_data["rtl.i"]
-    assert measurement.channel_data["rtl.q"]
+    assert measurement.channel_data["rtl.rx0.i"]
+    assert measurement.channel_data["rtl.rx0.q"]
     assert len(measurement.timestamps) == 8
-    assert measurement.channel_data["rtl.i"][0] == pytest.approx(0.0)
-    assert measurement.channel_data["rtl.q"][-1] == pytest.approx(2.0)
+    assert measurement.channel_data["rtl.rx0.i"][0] == pytest.approx(0.0)
+    assert measurement.channel_data["rtl.rx0.q"][-1] == pytest.approx(2.0)
 
 
 def test_03_instro_sdr_measure_spectrum_publishes_one_scalar_per_channel() -> None:
@@ -102,10 +102,10 @@ def test_03_instro_sdr_measure_spectrum_publishes_one_scalar_per_channel() -> No
 
     assert published == [measurement]
     assert set(measurement.channel_data) == {
-        "rtl.spectrum.peak_power_db",
-        "rtl.spectrum.peak_freq_hz",
-        "rtl.spectrum.mean_power_db",
-        "rtl.spectrum.occupied_bw_hz",
+        "rtl.rx0.spectrum.peak_power_db",
+        "rtl.rx0.spectrum.peak_freq_hz",
+        "rtl.rx0.spectrum.mean_power_db",
+        "rtl.rx0.spectrum.occupied_bw_hz",
     }
     assert len(measurement.timestamps) == 1
     assert all(len(values) == 1 for values in measurement.channel_data.values())
@@ -123,9 +123,9 @@ def test_04_instro_sdr_safely_wraps_driver_methods() -> None:
 
     measurement = sdr.measure_iq(n_samples=2)
 
-    assert "rtl.i" in measurement.channel_data
-    assert measurement.channel_data["rtl.i"][0] == pytest.approx(1.0)
-    assert measurement.channel_data["rtl.q"][1] == pytest.approx(4.0)
+    assert "rtl.rx0.i" in measurement.channel_data
+    assert measurement.channel_data["rtl.rx0.i"][0] == pytest.approx(1.0)
+    assert measurement.channel_data["rtl.rx0.q"][1] == pytest.approx(4.0)
 
 
 @pytest.mark.parametrize(
@@ -144,7 +144,7 @@ def test_05_instro_sdr_getters_publish_as_measurement(getter_name: str, descript
 
     measurement = getattr(sdr, getter_name)()
 
-    assert measurement.channel_data == {f"rtl.{descriptor}": [initial_value]}
+    assert measurement.channel_data == {f"rtl.rx0.{descriptor}": [initial_value]}
 
 
 def test_06_instro_sdr_getters_publish_to_attached_publishers() -> None:
@@ -157,7 +157,7 @@ def test_06_instro_sdr_getters_publish_to_attached_publishers() -> None:
     sdr.get_gain()
 
     assert len(published) == 1
-    assert published[0].channel_data == {"rtl.gain": [20.0]}
+    assert published[0].channel_data == {"rtl.rx0.gain": [20.0]}
 
 
 @pytest.mark.parametrize(
@@ -180,7 +180,7 @@ def test_07_instro_sdr_setters_publish_a_command(setter_name: str, value: float,
 
     assert isinstance(command, Command)
     assert published == [command]
-    assert command.channel_data == {f"rtl.{descriptor}.cmd": value}
+    assert command.channel_data == {f"rtl.rx0.{descriptor}.cmd": value}
 
 
 def test_08_measure_iq_spaces_timestamps_at_the_device_sample_period() -> None:
@@ -267,7 +267,7 @@ def test_13_measure_iq_warns_once_on_a_sub_nanosecond_sample_period(caplog) -> N
         measurement = sdr.measure_iq(n_samples=8)
         sdr.measure_iq(n_samples=8)
 
-    assert len(measurement.channel_data["rtl.i"]) == 8
+    assert len(measurement.channel_data["rtl.rx0.i"]) == 8
     assert len([r for r in caplog.records if "shorter than the integer nanosecond" in r.getMessage()]) == 1
 
 
@@ -278,7 +278,7 @@ class _ToneSDRDriver(_MinimalSDRDriver):
         super().__init__()
         self._offset_hz = offset_hz
 
-    def read_iq(self, n_samples: int) -> IQCapture:
+    def read_iq(self, n_samples: int, **kwargs) -> IQCapture:
         n = np.arange(n_samples)
         samples = np.exp(2j * np.pi * self._offset_hz * n / self._sample_rate_hz)
         return IQCapture(
@@ -296,12 +296,12 @@ def test_14_measure_spectrum_locates_a_tone_at_its_true_frequency() -> None:
     measurement = sdr.measure_spectrum(n_samples=1024)
 
     bin_width_hz = 2_400_000.0 / 1024
-    assert measurement.channel_data["rtl.spectrum.peak_freq_hz"][0] == pytest.approx(
+    assert measurement.channel_data["rtl.rx0.spectrum.peak_freq_hz"][0] == pytest.approx(
         100_000_000.0 + offset_hz, abs=bin_width_hz
     )
-    peak_db = measurement.channel_data["rtl.spectrum.peak_power_db"][0]
-    assert peak_db > measurement.channel_data["rtl.spectrum.mean_power_db"][0] + 20
-    assert measurement.channel_data["rtl.spectrum.occupied_bw_hz"][0] < 10 * bin_width_hz
+    peak_db = measurement.channel_data["rtl.rx0.spectrum.peak_power_db"][0]
+    assert peak_db > measurement.channel_data["rtl.rx0.spectrum.mean_power_db"][0] + 20
+    assert measurement.channel_data["rtl.rx0.spectrum.occupied_bw_hz"][0] < 10 * bin_width_hz
 
 
 def test_15_compute_psd_returns_the_array_without_publishing() -> None:
@@ -354,10 +354,10 @@ def test_18_measure_iq_values_match_per_element_conversion_exactly() -> None:
 
     measurement = sdr.measure_iq(n_samples=2048)
 
-    assert measurement.channel_data["rtl.i"] == [float(np.real(v)) for v in samples]
-    assert measurement.channel_data["rtl.q"] == [float(np.imag(v)) for v in samples]
+    assert measurement.channel_data["rtl.rx0.i"] == [float(np.real(v)) for v in samples]
+    assert measurement.channel_data["rtl.rx0.q"] == [float(np.imag(v)) for v in samples]
     # Publishers require plain Python scalars, not numpy types.
-    assert type(measurement.channel_data["rtl.i"][0]) is float
+    assert type(measurement.channel_data["rtl.rx0.i"][0]) is float
     assert type(measurement.timestamps[0]) is int
 
 
@@ -413,3 +413,87 @@ def test_21_measure_iq_takes_the_timebase_from_the_capture_not_a_second_query() 
 
     driver.get_sample_rate.assert_not_called()
     assert set(np.diff(measurement.timestamps).tolist()) <= {416, 417}
+
+
+class _RequiredOnlyDriver(SDRDriverBase):
+    """Implements the required tier and nothing else."""
+
+    def open(self) -> None: ...
+
+    def close(self) -> None: ...
+
+    def set_center_freq(self, frequency_hz: float, **kwargs) -> None: ...
+
+    def get_center_freq(self, **kwargs) -> float:
+        return 1e8
+
+    def set_sample_rate(self, sample_rate_hz: float, **kwargs) -> None: ...
+
+    def get_sample_rate(self, **kwargs) -> float:
+        return 2.4e6
+
+    def read_iq(self, n_samples: int, **kwargs) -> IQCapture:
+        return IQCapture(
+            samples=np.zeros(n_samples, dtype=np.complex128),
+            sample_period_ns=1e9 / 2.4e6,
+            center_freq_hz=1e8,
+        )
+
+
+def test_22_a_driver_implementing_only_the_required_tier_is_concrete() -> None:
+    """Optional capabilities must not force stubs onto drivers whose hardware lacks them."""
+    driver = _RequiredOnlyDriver()
+
+    assert isinstance(driver, SDRDriverBase)
+    assert InstroSDR(name="rtl", driver=driver).measure_iq(n_samples=8) is not None
+
+
+@pytest.mark.parametrize(
+    ("method", "args"),
+    [
+        ("set_gain", (10.0,)),
+        ("get_gain", ()),
+        ("set_gain_mode", (True,)),
+        ("get_gain_mode", ()),
+        ("get_gain_range", ()),
+        ("set_bandwidth", (1e6,)),
+        ("get_bandwidth", ()),
+        ("set_freq_correction", (10.0,)),
+        ("get_freq_correction", ()),
+        ("list_antennas", ()),
+        ("set_antenna", ("RX2",)),
+        ("get_antenna", ()),
+        ("get_num_channels", ()),
+        ("get_frequency_range", ()),
+        ("get_sample_rate_range", ()),
+    ],
+)
+def test_23_unimplemented_optional_methods_say_so(method: str, args: tuple) -> None:
+    """An unsupported capability raises NotImplementedError, not AttributeError or silence."""
+    driver = _RequiredOnlyDriver()
+
+    with pytest.raises(NotImplementedError):
+        getattr(driver, method)(*args)
+
+
+def test_24_direction_and_channel_reach_the_driver() -> None:
+    """The signal path a caller names must be the one the driver is asked about."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.get_center_freq.return_value = 1e8
+    sdr = InstroSDR(name="usrp", driver=driver)
+
+    measurement = sdr.get_center_freq(direction=Direction.TX, channel="1")
+
+    driver.get_center_freq.assert_called_once_with(direction=Direction.TX, channel="1")
+    assert measurement.channel_data == {"usrp.tx1.center_freq": [1e8]}
+
+
+def test_25_published_channels_name_the_signal_path() -> None:
+    """Multi-path radios need every channel to say which path it came from."""
+    sdr = InstroSDR(name="rtl", driver=_MinimalSDRDriver())
+
+    iq = sdr.measure_iq(n_samples=8)
+    command = sdr.set_center_freq(1e8)
+
+    assert set(iq.channel_data) == {"rtl.rx0.i", "rtl.rx0.q"}
+    assert set(command.channel_data) == {"rtl.rx0.center_freq.cmd"}
