@@ -18,6 +18,7 @@ import abc
 import logging
 import threading
 import time
+from dataclasses import dataclass
 from typing import Any, Callable
 
 import numpy as np
@@ -87,6 +88,16 @@ class SDRDriverBase(abc.ABC):
         raise NotImplementedError
 
 
+@dataclass(frozen=True, eq=False)
+class IQBlock:
+    """One acquisition: samples plus the device state they were taken under."""
+
+    samples: np.ndarray
+    timestamps: list[int]
+    sample_rate_hz: float
+    center_freq_hz: float
+
+
 class InstroSDR(Instrument):
     """Higher-level SDR wrapper that publishes buffered IQ measurements."""
 
@@ -134,6 +145,24 @@ class InstroSDR(Instrument):
         self._last_iq_timestamp = timestamps[-1]
         return timestamps
 
+    def _read_iq_block(self, n_samples: int) -> IQBlock | None:
+        """Acquire one IQ block with the device state it was taken under. Publishes nothing."""
+        if n_samples <= 0:
+            raise ValueError(f"n_samples must be positive, got {n_samples}")
+
+        with self._resource_lock:
+            data = np.asarray(self._driver.read_iq(n_samples), dtype=np.complex128)
+            sample_rate_hz = float(self._driver.get_sample_rate())
+            center_freq_hz = float(self._driver.get_center_freq())
+            timestamp = time.time_ns()
+
+            if data.size == 0:
+                return None
+
+            timestamps = self._iq_timestamps(timestamp, sample_rate_hz, len(data))
+
+        return IQBlock(data, timestamps, sample_rate_hz, center_freq_hz)
+
     @publish_measurement
     def measure_iq(self, n_samples: int = 1024, **kwargs: Any) -> Measurement | None:
         """Return a ``Measurement`` containing one IQ buffer block.
@@ -142,51 +171,67 @@ class InstroSDR(Instrument):
         timestamp vector. This keeps the payload structured and efficient while
         avoiding one published object per individual sample.
         """
-        if n_samples <= 0:
-            raise ValueError(f"n_samples must be positive, got {n_samples}")
+        block = self._read_iq_block(n_samples)
+        if block is None:
+            return None
 
-        with self._resource_lock:
-            data = np.asarray(self._driver.read_iq(n_samples), dtype=np.complex128)
-            sample_rate_hz = float(self._driver.get_sample_rate())
-            timestamp = time.time_ns()
-
-            if data.size == 0:
-                return None
-
-            timestamps = self._iq_timestamps(timestamp, sample_rate_hz, len(data))
-
-        complex_values = data
         return Measurement(
             channel_data={
-                f"{self.name}.i": [float(np.real(v)) for v in complex_values],
-                f"{self.name}.q": [float(np.imag(v)) for v in complex_values],
+                f"{self.name}.i": [float(np.real(v)) for v in block.samples],
+                f"{self.name}.q": [float(np.imag(v)) for v in block.samples],
             },
-            timestamps=timestamps,
+            timestamps=block.timestamps,
             tags={**self.default_tags, **kwargs},
         )
 
+    @staticmethod
+    def _psd_from_block(block: IQBlock) -> tuple[np.ndarray, np.ndarray]:
+        """Hann-windowed power spectral density for one block: absolute frequencies and linear PSD."""
+        window = np.hanning(len(block.samples))
+        spectrum = np.fft.fftshift(np.fft.fft(block.samples * window))
+        psd = np.abs(spectrum) ** 2 / (block.sample_rate_hz * np.sum(window**2))
+        freqs = np.fft.fftshift(np.fft.fftfreq(len(block.samples), d=1.0 / block.sample_rate_hz))
+        return freqs + block.center_freq_hz, psd
+
+    @staticmethod
+    def _occupied_bandwidth(freqs: np.ndarray, psd: np.ndarray, fraction: float = 0.99) -> float:
+        """Width of the band holding ``fraction`` of total power, split evenly across both tails."""
+        total = float(psd.sum())
+        if total <= 0:
+            return 0.0
+        cumulative = np.cumsum(psd) / total
+        tail = (1.0 - fraction) / 2.0
+        low = int(np.searchsorted(cumulative, tail))
+        high = min(int(np.searchsorted(cumulative, 1.0 - tail)), len(freqs) - 1)
+        return float(freqs[high] - freqs[low])
+
+    def compute_psd(self, n_samples: int = 1024) -> tuple[np.ndarray, np.ndarray] | None:
+        """Acquire a block and return its ``(frequencies_hz, power_db)`` spectrum. Publishes nothing."""
+        block = self._read_iq_block(n_samples)
+        if block is None:
+            return None
+        freqs, psd = self._psd_from_block(block)
+        return freqs, 10.0 * np.log10(np.maximum(psd, np.finfo(float).tiny))
+
     @publish_measurement
     def measure_spectrum(self, n_samples: int = 1024, **kwargs: Any) -> Measurement | None:
-        """Return a compact power-spectrum summary for the selected IQ window."""
-        iq = self.measure_iq(n_samples=n_samples, **kwargs)
-        if iq is None:
+        """Publish scalar features of the block's power spectrum; use ``compute_psd`` for the array."""
+        block = self._read_iq_block(n_samples)
+        if block is None:
             return None
 
-        i_vals = np.asarray(iq.channel_data[f"{self.name}.i"], dtype=float)
-        q_vals = np.asarray(iq.channel_data[f"{self.name}.q"], dtype=float)
-        power = np.abs(i_vals + 1j * q_vals) ** 2
-
-        n_bins = min(5, len(power))
-        if n_bins == 0:
-            return None
-
-        x = np.linspace(0, len(power) - 1, n_bins, dtype=float)
-        y = np.interp(x, np.arange(len(power)), power)
-        timestamp = time.time_ns()
+        freqs, psd = self._psd_from_block(block)
+        floor = np.finfo(float).tiny
+        peak = int(np.argmax(psd))
 
         return Measurement(
-            channel_data={f"{self.name}.spectrum": [float(p) for p in y]},
-            timestamps=[timestamp],
+            channel_data={
+                f"{self.name}.spectrum.peak_power_db": [float(10.0 * np.log10(max(psd[peak], floor)))],
+                f"{self.name}.spectrum.peak_freq_hz": [float(freqs[peak])],
+                f"{self.name}.spectrum.mean_power_db": [float(10.0 * np.log10(max(psd.mean(), floor)))],
+                f"{self.name}.spectrum.occupied_bw_hz": [self._occupied_bandwidth(freqs, psd)],
+            },
+            timestamps=[block.timestamps[-1]],
             tags={**self.default_tags, **kwargs},
         )
 
