@@ -13,6 +13,7 @@ from typing import Any, ClassVar
 import numpy as np
 
 from instro.unstable.sdr.sdr import IQCapture, SDRDriverBase
+from instro.unstable.sdr.types import Direction
 
 
 class RTLSDR(SDRDriverBase):
@@ -38,35 +39,53 @@ class RTLSDR(SDRDriverBase):
             self._device.close()
             self._device = None
 
-    def set_center_freq(self, frequency_hz: float) -> None:
-        self._require_device().center_freq = float(frequency_hz)
+    def set_center_freq(self, frequency_hz: float, *, direction: Direction = Direction.RX, channel: str = "0") -> None:
+        self._require_rx(direction, channel).center_freq = float(frequency_hz)
 
-    def get_center_freq(self) -> float:
-        return float(self._require_device().center_freq)
+    def get_center_freq(self, *, direction: Direction = Direction.RX, channel: str = "0") -> float:
+        return float(self._require_rx(direction, channel).center_freq)
 
-    def set_sample_rate(self, sample_rate_hz: float) -> None:
-        self._require_device().sample_rate = float(sample_rate_hz)
+    def set_sample_rate(
+        self, sample_rate_hz: float, *, direction: Direction = Direction.RX, channel: str = "0"
+    ) -> None:
+        self._require_rx(direction, channel).sample_rate = float(sample_rate_hz)
 
-    def get_sample_rate(self) -> float:
-        return float(self._require_device().sample_rate)
+    def get_sample_rate(self, *, direction: Direction = Direction.RX, channel: str = "0") -> float:
+        return float(self._require_rx(direction, channel).sample_rate)
 
-    def set_gain(self, gain_db: float) -> None:
-        self._require_device().gain = float(gain_db)
+    def set_gain(self, gain_db: float, *, direction: Direction = Direction.RX, channel: str = "0") -> None:
+        self._require_rx(direction, channel).gain = float(gain_db)
 
-    def get_gain(self) -> float:
-        return float(self._require_device().gain)
+    def get_gain(self, *, direction: Direction = Direction.RX, channel: str = "0") -> float:
+        return float(self._require_rx(direction, channel).gain)
 
-    def set_bandwidth(self, bandwidth_hz: float) -> None:
-        self._require_device().bandwidth = float(bandwidth_hz)
+    def set_gain_mode(self, automatic: bool, *, direction: Direction = Direction.RX, channel: str = "0") -> None:
+        self._require_rx(direction, channel).set_manual_gain_enabled(not automatic)
 
-    def get_bandwidth(self) -> float:
-        return float(self._require_device().bandwidth)
+    def get_gain_range(self, *, direction: Direction = Direction.RX, channel: str = "0") -> tuple[float, float]:
+        gains = self._require_rx(direction, channel).valid_gains_db
+        return float(min(gains)), float(max(gains))
 
-    def read_iq(self, n_samples: int) -> IQCapture:
+    def set_bandwidth(self, bandwidth_hz: float, *, direction: Direction = Direction.RX, channel: str = "0") -> None:
+        self._require_rx(direction, channel).bandwidth = float(bandwidth_hz)
+
+    def get_bandwidth(self, *, direction: Direction = Direction.RX, channel: str = "0") -> float:
+        return float(self._require_rx(direction, channel).bandwidth)
+
+    def set_freq_correction(self, ppm: float, *, direction: Direction = Direction.RX, channel: str = "0") -> None:
+        self._require_rx(direction, channel).freq_correction = int(ppm)
+
+    def get_freq_correction(self, *, direction: Direction = Direction.RX, channel: str = "0") -> float:
+        return float(self._require_rx(direction, channel).freq_correction)
+
+    def get_num_channels(self, direction: Direction = Direction.RX) -> int:
+        return 1 if direction is Direction.RX else 0
+
+    def read_iq(self, n_samples: int, *, direction: Direction = Direction.RX, channel: str = "0") -> IQCapture:
         """Read ``n_samples`` complex IQ pairs from the device."""
         if n_samples <= 0 or n_samples % self.READ_GRANULARITY:
             raise ValueError(f"n_samples must be a positive multiple of {self.READ_GRANULARITY}, got {n_samples}")
-        device = self._require_device()
+        device = self._require_rx(direction, channel)
         samples = np.asarray(device.read_samples(n_samples), dtype=np.complex128)
         # No sample clock of its own, so t0 stays unset and the host anchors the block.
         return IQCapture(
@@ -74,6 +93,12 @@ class RTLSDR(SDRDriverBase):
             sample_period_ns=1e9 / float(device.sample_rate),
             center_freq_hz=float(device.center_freq),
         )
+
+    def _require_rx(self, direction: Direction, channel: str) -> Any:
+        """An RTL-SDR is receive-only with a single signal path."""
+        if direction is not Direction.RX or channel != "0":
+            raise ValueError(f"RTLSDR has only rx channel '0', got {direction.value} channel '{channel}'")
+        return self._require_device()
 
     def _require_device(self) -> Any:
         # pyrtlsdr closes on a transport error; reading through the stale handle segfaults.

@@ -7,8 +7,10 @@ shared ``Measurement``/``Command`` objects from the core library.
 """
 
 from instro.unstable.sdr.sdr import InstroSDR, IQCapture, SDRDriverBase
+from instro.unstable.sdr.types import Direction
 
 __all__ = [
+    "Direction",
     "IQCapture",
     "InstroSDR",
     "SDRDriverBase",

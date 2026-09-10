@@ -9,6 +9,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+from instro.unstable.sdr import Direction
 from instro.unstable.sdr.drivers import RTLSDR
 
 
@@ -190,8 +191,102 @@ def test_10_rtlsdr_reads_iq_from_a_connected_dongle() -> None:
         assert capture.center_freq_hz == pytest.approx(89_700_000.0, rel=1e-4)
         assert capture.t0_ns is None
 
+        # Optional capabilities the dongle genuinely backs.
+        assert sdr.get_num_channels(Direction.RX) == 1
+        assert sdr.get_num_channels(Direction.TX) == 0
+
+        low, high = sdr.get_gain_range()
+        assert 0.0 <= low < high
+
+        sdr.set_freq_correction(5)
+        assert sdr.get_freq_correction() == pytest.approx(5.0)
+        sdr.set_freq_correction(0)
+
+        sdr.set_gain_mode(True)
+        sdr.set_gain_mode(False)
+
+        # Optional capabilities it does not have.
+        for method in ("list_antennas", "get_antenna", "get_gain_mode"):
+            with pytest.raises(NotImplementedError):
+                getattr(sdr, method)()
+
+        # Paths this radio does not have are refused, not silently redirected to rx0.
+        with pytest.raises(ValueError, match="only rx channel"):
+            sdr.read_iq(1024, direction=Direction.TX)
+
         sdr.close()
         sdr.open()
         assert sdr.read_iq(1024).samples.shape == (1024,)
     finally:
         sdr.close()
+
+
+@pytest.mark.parametrize(
+    ("direction", "channel"),
+    [(Direction.TX, "0"), (Direction.RX, "1"), (Direction.TX, "1")],
+)
+def test_13_rtlsdr_rejects_paths_it_does_not_have(direction: Direction, channel: str) -> None:
+    """A receive-only single-path radio must refuse, not silently act on rx0 instead."""
+    patcher, _, device = _patch_rtlsdr()
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.open()
+
+        with pytest.raises(ValueError, match="only rx channel"):
+            driver.get_center_freq(direction=direction, channel=channel)
+        with pytest.raises(ValueError, match="only rx channel"):
+            driver.read_iq(1024, direction=direction, channel=channel)
+        device.read_samples.assert_not_called()
+    finally:
+        patcher.stop()
+
+
+def test_14_rtlsdr_reports_its_channel_counts() -> None:
+    """Capability discovery: one receive path, no transmit path."""
+    driver = RTLSDR(device_index=0)
+
+    assert driver.get_num_channels(Direction.RX) == 1
+    assert driver.get_num_channels(Direction.TX) == 0
+
+
+def test_15_rtlsdr_leaves_unsupported_capabilities_unimplemented() -> None:
+    """The dongle has no antenna switch and pyrtlsdr exposes no gain-mode readback."""
+    patcher, _, _ = _patch_rtlsdr()
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.open()
+
+        for method, args in (("list_antennas", ()), ("get_antenna", ()), ("get_gain_mode", ())):
+            with pytest.raises(NotImplementedError):
+                getattr(driver, method)(*args)
+    finally:
+        patcher.stop()
+
+
+def test_16_rtlsdr_gain_mode_maps_onto_manual_gain() -> None:
+    """AGC on means manual gain off, which is how librtlsdr expresses it."""
+    patcher, _, device = _patch_rtlsdr()
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.open()
+
+        driver.set_gain_mode(True)
+        device.set_manual_gain_enabled.assert_called_once_with(False)
+
+        driver.set_gain_mode(False)
+        device.set_manual_gain_enabled.assert_called_with(True)
+    finally:
+        patcher.stop()
+
+
+def test_17_rtlsdr_reports_its_gain_range() -> None:
+    """The range comes from the tuner's own gain table, not a hardcoded guess."""
+    patcher, _, device = _patch_rtlsdr()
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.open()
+        device.valid_gains_db = [0.0, 0.9, 1.4, 49.6]
+
+        assert driver.get_gain_range() == (0.0, 49.6)
+    finally:
+        patcher.stop()

@@ -72,7 +72,7 @@ that loss shows up as a gap in the timestamps. There is no gapless streaming API
 `.i` is the real part and `.q` the imaginary part:
 
 ```python
-z = np.asarray(iq.channel_data["rtl.i"]) + 1j * np.asarray(iq.channel_data["rtl.q"])
+z = np.asarray(iq.channel_data["rtl.rx0.i"]) + 1j * np.asarray(iq.channel_data["rtl.rx0.q"])
 ```
 
 Swapping them conjugates the signal, which mirrors the spectrum about the center frequency.
@@ -139,11 +139,11 @@ try:
     print(f"tuned to {sdr.get_center_freq().latest / 1e6:.4f} MHz")
 
     iq = sdr.measure_iq(n_samples=262144)
-    z = np.asarray(iq.channel_data["rtl.i"]) + 1j * np.asarray(iq.channel_data["rtl.q"])
+    z = np.asarray(iq.channel_data["rtl.rx0.i"]) + 1j * np.asarray(iq.channel_data["rtl.rx0.q"])
     print(f"mean power {10 * np.log10(np.mean(np.abs(z) ** 2)):.1f} dB")
 
     spectrum = sdr.measure_spectrum(n_samples=262144)
-    print(spectrum.channel_data["rtl.spectrum.peak_freq_hz"][0])
+    print(spectrum.channel_data["rtl.rx0.spectrum.peak_freq_hz"][0])
 finally:
     sdr.close()
 ```
@@ -157,24 +157,34 @@ library close the device.
 
 ## Published channels
 
-Every measurement/command call produces a channel keyed under `{name}.{descriptor}`, where
-`{name}` is the constructor argument and `{descriptor}` is the row below.
+Every measurement/command call produces a channel keyed under `{name}.{path}.{descriptor}`,
+where `{name}` is the constructor argument and `{path}` names the signal path the call
+applied to (`rx0` by default). A two-channel transceiver publishes `rx0`, `rx1`, `tx0` and
+`tx1` independently.
 
 | Method | Descriptor | Type |
 |--------|------------|------|
 | `set_center_freq()` | `center_freq.cmd` | command |
 | `set_sample_rate()` | `sample_rate.cmd` | command |
 | `set_gain()` | `gain.cmd` | command |
+| `set_gain_mode()` | `gain_mode.cmd` | command |
 | `set_bandwidth()` | `bandwidth.cmd` | command |
+| `set_freq_correction()` | `freq_correction.cmd` | command |
+| `set_antenna()` | `antenna.cmd` | command |
 | `get_center_freq()` | `center_freq` | telemetry |
 | `get_sample_rate()` | `sample_rate` | telemetry |
 | `get_gain()` | `gain` | telemetry |
+| `get_gain_mode()` | `gain_mode` | telemetry |
 | `get_bandwidth()` | `bandwidth` | telemetry |
+| `get_freq_correction()` | `freq_correction` | telemetry |
+| `get_antenna()` | `antenna` | telemetry |
 | `measure_iq()` | `i`, `q` | telemetry (one value per sample) |
 | `measure_spectrum()` | `spectrum.peak_power_db` | telemetry |
 | `measure_spectrum()` | `spectrum.peak_freq_hz` | telemetry |
 | `measure_spectrum()` | `spectrum.mean_power_db` | telemetry |
 | `measure_spectrum()` | `spectrum.occupied_bw_hz` | telemetry |
+
+So an RTL-SDR named `rtl` publishes `rtl.rx0.i`, `rtl.rx0.center_freq.cmd`, and so on.
 
 <Note>
 `compute_psd()` returns `(frequencies_hz, power_db)` as numpy arrays directly and does not
@@ -217,21 +227,38 @@ connection lifecycle and holds no reference back to `InstroSDR`.
 
 ## SDRDriverBase Interface
 
-Every method is currently required:
+Required methods are abstract; every radio can tune, set a rate, and hand back samples:
 
 | Method | Signature | Description |
 |---|---|---|
 | `open` | `() -> None` | Open the transport or SDR handle |
 | `close` | `() -> None` | Close it |
-| `set_center_freq` | `(frequency_hz: float) -> None` | Tune |
-| `get_center_freq` | `() -> float` | Read the tuned frequency |
-| `set_sample_rate` | `(sample_rate_hz: float) -> None` | Set the IQ rate |
-| `get_sample_rate` | `() -> float` | Read the IQ rate |
-| `set_gain` | `(gain_db: float) -> None` | Set gain |
-| `get_gain` | `() -> float` | Read gain |
-| `set_bandwidth` | `(bandwidth_hz: float) -> None` | Set IF/filter bandwidth |
-| `get_bandwidth` | `() -> float` | Read bandwidth |
-| `read_iq` | `(n_samples: int) -> IQCapture` | Return a complex IQ block with its timebase |
+| `set_center_freq` | `(frequency_hz: float, *, direction, channel) -> None` | Tune |
+| `get_center_freq` | `(*, direction, channel) -> float` | Read the tuned frequency |
+| `set_sample_rate` | `(sample_rate_hz: float, *, direction, channel) -> None` | Set the IQ rate |
+| `get_sample_rate` | `(*, direction, channel) -> float` | Read the IQ rate |
+| `read_iq` | `(n_samples: int, *, direction, channel) -> IQCapture` | Return a block with its timebase |
+
+Everything else raises `NotImplementedError` by default. Override only what the hardware
+supports, and leave the rest alone:
+
+| Method | Description |
+|---|---|
+| `set_gain` / `get_gain` | Overall gain in dB, where the radio has a single gain figure |
+| `set_gain_mode` / `get_gain_mode` | Hand gain to the AGC or take manual control |
+| `get_gain_range` | Lowest and highest settable gain |
+| `set_bandwidth` / `get_bandwidth` | IF or filter bandwidth, where it is separable from the sample rate |
+| `set_freq_correction` / `get_freq_correction` | Reference oscillator error in ppm |
+| `list_antennas` / `set_antenna` / `get_antenna` | Antenna port selection |
+| `get_num_channels` | Signal paths per direction; `0` means the radio cannot do it |
+| `get_frequency_range` / `get_sample_rate_range` | Settable limits |
+
+<Note>
+The two tiers are not symmetric by accident. Radios disagree about what "gain" even means:
+an RTL-SDR has one figure, while a vector signal analyzer has a reference level plus
+mechanical, IF and preamp stages. Forcing every driver to stub a capability its hardware
+lacks is what the optional tier exists to avoid.
+</Note>
 
 ### IQCapture
 
@@ -249,16 +276,29 @@ Reporting `center_freq_hz` from the same device snapshot as the samples is what 
 spectrum carry a real frequency axis. Querying it separately would let a retune slip in
 between and mislabel the result.
 
+Set `t0_ns` when the hardware timestamps its own samples (UHD's `TimeSpec`, NI-RFSA's
+`absolute_initial_x`). `InstroSDR` then places the block exactly where the device says.
+Leave it `None` and the host anchors the block instead, backstamping it to end when the read
+returned. An RTL-SDR has no such clock, so its driver leaves it unset.
+
+### Direction and channel
+
+Every per-path method takes keyword-only `direction` (`Direction.RX` or `Direction.TX`) and
+`channel`, a string identifier. Both default to the first receive path, so a single-channel
+receiver never has to mention them.
+
+`channel` is a string rather than an index because the APIs this contract has to sit over
+disagree: SoapySDR uses integer indices, UHD names antennas (`"RX2"`), and NI-RFSA uses port
+strings with no indexing at all. A string spans all three.
+
+Drivers validate their own arguments. `RTLSDR` rejects anything but `rx` channel `"0"`
+rather than silently acting on the path it does have.
+
 <Warning>
 `sample_period_ns` must describe the block being returned, not the rate last requested. A
 tuner quantizes what it was asked for, and `InstroSDR` derives every IQ timestamp from this
 field, so a nominal value mislabels the timebase of everything the driver produces.
 </Warning>
-
-Set `t0_ns` when the hardware timestamps its own samples (UHD's `TimeSpec`, NI-RFSA's
-`absolute_initial_x`). `InstroSDR` then places the block exactly where the device says.
-Leave it `None` and the host anchors the block instead, backstamping it to end when the read
-returned. An RTL-SDR has no such clock, so its driver leaves it unset.
 
 ## Implementation Example: RTLSDR Driver
 
@@ -268,6 +308,7 @@ from typing import Any, ClassVar
 import numpy as np
 
 from instro.unstable.sdr.sdr import IQCapture, SDRDriverBase
+from instro.unstable.sdr.types import Direction
 
 
 class RTLSDR(SDRDriverBase):
@@ -299,7 +340,7 @@ class RTLSDR(SDRDriverBase):
 
     # ... remaining accessors follow the same shape ...
 
-    def read_iq(self, n_samples: int) -> IQCapture:
+    def read_iq(self, n_samples: int, *, direction=Direction.RX, channel="0") -> IQCapture:
         if n_samples <= 0 or n_samples % self.READ_GRANULARITY:
             raise ValueError(f"n_samples must be a positive multiple of {self.READ_GRANULARITY}")
         device = self._require_device()
