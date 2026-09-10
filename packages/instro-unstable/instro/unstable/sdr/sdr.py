@@ -135,13 +135,13 @@ class InstroSDR(Instrument):
             )
 
         period_ns = 1e9 / sample_rate_hz
-        offsets = [round(i * period_ns) for i in range(length)]
+        offsets = np.round(np.arange(length) * period_ns).astype(np.int64)
 
-        t0 = t_read_ns - offsets[-1]
+        t0 = t_read_ns - int(offsets[-1])
         if self._last_iq_timestamp is not None and t0 <= self._last_iq_timestamp:
             t0 = self._last_iq_timestamp + round(period_ns)
 
-        timestamps = [t0 + offset for offset in offsets]
+        timestamps: list[int] = (t0 + offsets).tolist()
         self._last_iq_timestamp = timestamps[-1]
         return timestamps
 
@@ -177,8 +177,8 @@ class InstroSDR(Instrument):
 
         return Measurement(
             channel_data={
-                f"{self.name}.i": [float(np.real(v)) for v in block.samples],
-                f"{self.name}.q": [float(np.imag(v)) for v in block.samples],
+                f"{self.name}.i": block.samples.real.tolist(),
+                f"{self.name}.q": block.samples.imag.tolist(),
             },
             timestamps=block.timestamps,
             tags={**self.default_tags, **kwargs},

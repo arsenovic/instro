@@ -324,3 +324,22 @@ def test_17_instro_sdr_does_not_delegate_to_the_driver() -> None:
 
     assert sdr.driver is driver
     assert sdr.driver.read_iq(4).shape == (4,)
+
+
+def test_18_measure_iq_values_match_per_element_conversion_exactly() -> None:
+    """The vectorised conversion must be bit-identical to the per-element form it replaced."""
+    rng = np.random.default_rng(0)
+    samples = (rng.standard_normal(2048) + 1j * rng.standard_normal(2048)).astype(np.complex128)
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.read_iq.return_value = samples
+    driver.get_sample_rate.return_value = 2_400_000.0
+    driver.get_center_freq.return_value = 100_000_000.0
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    measurement = sdr.measure_iq(n_samples=2048)
+
+    assert measurement.channel_data["rtl.i"] == [float(np.real(v)) for v in samples]
+    assert measurement.channel_data["rtl.q"] == [float(np.imag(v)) for v in samples]
+    # Publishers require plain Python scalars, not numpy types.
+    assert type(measurement.channel_data["rtl.i"][0]) is float
+    assert type(measurement.timestamps[0]) is int
