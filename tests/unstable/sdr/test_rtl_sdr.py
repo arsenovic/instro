@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
+import sys
 from unittest.mock import patch
 
 import numpy as np
@@ -118,8 +120,22 @@ def test_08_rtlsdr_raises_a_clear_error_when_not_open() -> None:
         driver.get_center_freq()
 
 
+def test_09_driver_imports_without_the_vendor_sdk_installed() -> None:
+    """The vendor SDK belongs to instro-unstable, not core instro: importing must not require it."""
+    module = importlib.import_module("instro.unstable.sdr.drivers.rtl_sdr")
+
+    with patch.dict(sys.modules, {"rtlsdr": None}):
+        importlib.reload(module)
+        driver = module.RTLSDR(device_index=0)  # construction stays SDK-free
+
+        with pytest.raises(ImportError):
+            driver.open()  # only the USB handle needs the SDK
+
+    importlib.reload(module)
+
+
 @pytest.mark.hardware
-def test_09_rtlsdr_reads_iq_from_a_connected_dongle() -> None:
+def test_10_rtlsdr_reads_iq_from_a_connected_dongle() -> None:
     """Requires one RTL-SDR on USB. Verifies open, configure, a real IQ read, and reopen."""
     sdr = RTLSDR(device_index=0)
     try:
