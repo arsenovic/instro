@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from instro.lib import Command
-from instro.unstable.sdr import InstroSDR, SDRDriverBase
+from instro.unstable.sdr import InstroSDR, IQCapture, SDRDriverBase
 
 
 class _MinimalSDRDriver(SDRDriverBase):
@@ -51,9 +51,14 @@ class _MinimalSDRDriver(SDRDriverBase):
     def get_bandwidth(self) -> float:
         return self._bandwidth_hz
 
-    def read_iq(self, n_samples: int) -> np.ndarray:
+    def read_iq(self, n_samples: int) -> IQCapture:
         base = np.linspace(0, 1, n_samples, dtype=float)
-        return base.astype(np.complex128) + 1j * (base * 2.0)
+        samples = base.astype(np.complex128) + 1j * (base * 2.0)
+        return IQCapture(
+            samples=samples,
+            sample_period_ns=1e9 / self._sample_rate_hz,
+            center_freq_hz=self._center_freq_hz,
+        )
 
 
 def test_01_sdr_driver_base_requires_implementation() -> None:
@@ -109,7 +114,11 @@ def test_03_instro_sdr_measure_spectrum_publishes_one_scalar_per_channel() -> No
 def test_04_instro_sdr_safely_wraps_driver_methods() -> None:
     driver = MagicMock(spec=_MinimalSDRDriver)
     driver.get_sample_rate.return_value = 2_400_000.0
-    driver.read_iq.return_value = np.array([1 + 2j, 3 + 4j], dtype=np.complex128)
+    driver.read_iq.return_value = IQCapture(
+        samples=np.array([1 + 2j, 3 + 4j], dtype=np.complex128),
+        sample_period_ns=1e9 / 2_400_000.0,
+        center_freq_hz=100_000_000.0,
+    )
     sdr = InstroSDR(name="rtl", driver=driver)
 
     measurement = sdr.measure_iq(n_samples=2)
@@ -219,14 +228,15 @@ def test_10_measure_iq_re_anchors_after_a_real_gap() -> None:
     assert second.timestamps[0] - first.timestamps[-1] > dt
 
 
-def test_11_measure_iq_rejects_a_non_positive_sample_rate() -> None:
-    """A driver that cannot report its rate must fail loudly rather than fabricate a timebase."""
+def test_11_measure_iq_rejects_a_non_positive_sample_period() -> None:
+    """A driver that cannot report its timebase must fail loudly rather than fabricate one."""
     driver = MagicMock(spec=_MinimalSDRDriver)
-    driver.get_sample_rate.return_value = 0.0
-    driver.read_iq.return_value = np.array([1 + 2j], dtype=np.complex128)
+    driver.read_iq.return_value = IQCapture(
+        samples=np.array([1 + 2j], dtype=np.complex128), sample_period_ns=0.0, center_freq_hz=1e8
+    )
     sdr = InstroSDR(name="rtl", driver=driver)
 
-    with pytest.raises(ValueError, match="non-positive sample rate"):
+    with pytest.raises(ValueError, match="non-positive sample period"):
         sdr.measure_iq(n_samples=1)
 
 
@@ -246,10 +256,11 @@ def test_12_measure_iq_timestamps_track_the_exact_sample_period() -> None:
 
 
 def test_13_measure_iq_warns_once_on_a_sub_nanosecond_sample_period(caplog) -> None:
-    """Above 1 GSa/s integer-ns timestamps collapse samples onto duplicates; warn, don't fail."""
+    """A sub-nanosecond period collapses samples onto duplicate timestamps; warn, don't fail."""
     driver = MagicMock(spec=_MinimalSDRDriver)
-    driver.get_sample_rate.return_value = 2e9
-    driver.read_iq.return_value = np.zeros(8, dtype=np.complex128)
+    driver.read_iq.return_value = IQCapture(
+        samples=np.zeros(8, dtype=np.complex128), sample_period_ns=0.5, center_freq_hz=1e8
+    )
     sdr = InstroSDR(name="rtl", driver=driver)
 
     with caplog.at_level(logging.WARNING, logger="instro.unstable.sdr.sdr"):
@@ -257,7 +268,7 @@ def test_13_measure_iq_warns_once_on_a_sub_nanosecond_sample_period(caplog) -> N
         sdr.measure_iq(n_samples=8)
 
     assert len(measurement.channel_data["rtl.i"]) == 8
-    assert len([r for r in caplog.records if "1 GSa/s" in r.getMessage()]) == 1
+    assert len([r for r in caplog.records if "shorter than the integer nanosecond" in r.getMessage()]) == 1
 
 
 class _ToneSDRDriver(_MinimalSDRDriver):
@@ -267,9 +278,14 @@ class _ToneSDRDriver(_MinimalSDRDriver):
         super().__init__()
         self._offset_hz = offset_hz
 
-    def read_iq(self, n_samples: int) -> np.ndarray:
+    def read_iq(self, n_samples: int) -> IQCapture:
         n = np.arange(n_samples)
-        return np.exp(2j * np.pi * self._offset_hz * n / self._sample_rate_hz)
+        samples = np.exp(2j * np.pi * self._offset_hz * n / self._sample_rate_hz)
+        return IQCapture(
+            samples=samples,
+            sample_period_ns=1e9 / self._sample_rate_hz,
+            center_freq_hz=self._center_freq_hz,
+        )
 
 
 def test_14_measure_spectrum_locates_a_tone_at_its_true_frequency() -> None:
@@ -323,7 +339,7 @@ def test_17_instro_sdr_does_not_delegate_to_the_driver() -> None:
         sdr.read_iq  # noqa: B018 -- the attribute access itself is under test
 
     assert sdr.driver is driver
-    assert sdr.driver.read_iq(4).shape == (4,)
+    assert sdr.driver.read_iq(4).samples.shape == (4,)
 
 
 def test_18_measure_iq_values_match_per_element_conversion_exactly() -> None:
@@ -331,9 +347,9 @@ def test_18_measure_iq_values_match_per_element_conversion_exactly() -> None:
     rng = np.random.default_rng(0)
     samples = (rng.standard_normal(2048) + 1j * rng.standard_normal(2048)).astype(np.complex128)
     driver = MagicMock(spec=_MinimalSDRDriver)
-    driver.read_iq.return_value = samples
-    driver.get_sample_rate.return_value = 2_400_000.0
-    driver.get_center_freq.return_value = 100_000_000.0
+    driver.read_iq.return_value = IQCapture(
+        samples=samples, sample_period_ns=1e9 / 2_400_000.0, center_freq_hz=100_000_000.0
+    )
     sdr = InstroSDR(name="rtl", driver=driver)
 
     measurement = sdr.measure_iq(n_samples=2048)
@@ -343,3 +359,57 @@ def test_18_measure_iq_values_match_per_element_conversion_exactly() -> None:
     # Publishers require plain Python scalars, not numpy types.
     assert type(measurement.channel_data["rtl.i"][0]) is float
     assert type(measurement.timestamps[0]) is int
+
+
+def test_19_a_hardware_timestamp_anchors_the_block() -> None:
+    """A driver whose device timed the samples supplies t0; the host clock must not override it."""
+    hardware_t0 = 1_700_000_000_000_000_000
+    period_ns = 1e9 / 2_400_000.0
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.read_iq.return_value = IQCapture(
+        samples=np.zeros(64, dtype=np.complex128),
+        sample_period_ns=period_ns,
+        center_freq_hz=100_000_000.0,
+        t0_ns=hardware_t0,
+    )
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    measurement = sdr.measure_iq(n_samples=64)
+
+    assert measurement.timestamps[0] == hardware_t0
+    assert measurement.timestamps[-1] == hardware_t0 + round(63 * period_ns)
+
+
+def test_20_hardware_timestamps_bypass_the_wall_clock_continuity_guard() -> None:
+    """With a device clock, blocks land where the device says, even if that repeats a timeline."""
+    period_ns = 1e9 / 2_400_000.0
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    driver.read_iq.return_value = IQCapture(
+        samples=np.zeros(8, dtype=np.complex128),
+        sample_period_ns=period_ns,
+        center_freq_hz=1e8,
+        t0_ns=5_000,
+    )
+    first = sdr.measure_iq(n_samples=8)
+    second = sdr.measure_iq(n_samples=8)
+
+    assert first.timestamps == second.timestamps == [5_000 + round(i * period_ns) for i in range(8)]
+
+
+def test_21_measure_iq_takes_the_timebase_from_the_capture_not_a_second_query() -> None:
+    """Regression risk: re-querying the rate can disagree with the block that was just read."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.read_iq.return_value = IQCapture(
+        samples=np.zeros(16, dtype=np.complex128),
+        sample_period_ns=1e9 / 2_400_000.0,
+        center_freq_hz=100_000_000.0,
+    )
+    driver.get_sample_rate.return_value = 999.0  # a stale value the HAL must ignore
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    measurement = sdr.measure_iq(n_samples=16)
+
+    driver.get_sample_rate.assert_not_called()
+    assert set(np.diff(measurement.timestamps).tolist()) <= {416, 417}

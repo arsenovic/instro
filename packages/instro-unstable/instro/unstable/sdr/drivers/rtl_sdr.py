@@ -12,14 +12,13 @@ from typing import Any, ClassVar
 
 import numpy as np
 
-from instro.unstable.sdr.sdr import SDRDriverBase
+from instro.unstable.sdr.sdr import IQCapture, SDRDriverBase
 
 
 class RTLSDR(SDRDriverBase):
     """RTL-SDR dongle. Connection params captured in ``__init__``; USB opens on ``open()``."""
 
-    # librtlsdr transfers whole 512-byte USB blocks and one IQ sample is 2 bytes; a request
-    # that is not a whole number of blocks short-reads, which makes pyrtlsdr close the device.
+    # librtlsdr moves whole 512-byte USB blocks; a short read makes pyrtlsdr close the device.
     READ_GRANULARITY: ClassVar[int] = 256
 
     def __init__(self, device_index: int = 0, **kwargs: Any):
@@ -63,15 +62,21 @@ class RTLSDR(SDRDriverBase):
     def get_bandwidth(self) -> float:
         return float(self._require_device().bandwidth)
 
-    def read_iq(self, n_samples: int) -> np.ndarray:
+    def read_iq(self, n_samples: int) -> IQCapture:
         """Read ``n_samples`` complex IQ pairs from the device."""
         if n_samples <= 0 or n_samples % self.READ_GRANULARITY:
             raise ValueError(f"n_samples must be a positive multiple of {self.READ_GRANULARITY}, got {n_samples}")
-        return np.asarray(self._require_device().read_samples(n_samples), dtype=np.complex128)
+        device = self._require_device()
+        samples = np.asarray(device.read_samples(n_samples), dtype=np.complex128)
+        # No sample clock of its own, so t0 stays unset and the host anchors the block.
+        return IQCapture(
+            samples=samples,
+            sample_period_ns=1e9 / float(device.sample_rate),
+            center_freq_hz=float(device.center_freq),
+        )
 
     def _require_device(self) -> Any:
-        # pyrtlsdr closes the handle itself on a transport error, so a reference we still hold
-        # can point at a closed device -- reading through it segfaults inside librtlsdr.
+        # pyrtlsdr closes on a transport error; reading through the stale handle segfaults.
         if self._device is not None and not getattr(self._device, "device_opened", True):
             self._device = None
         if self._device is None:
