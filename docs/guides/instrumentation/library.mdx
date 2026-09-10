@@ -17,6 +17,25 @@ description: The `Instrument`, `Measurement`, and `Command` building blocks
 
 When creating a custom instrument type, you must subclass `Instrument`.
 
+## Two ways to get data
+
+You can get measurements into your script in two ways. If a publisher is attached, **both options publish data** whenever a measurement is produced. The difference is who triggers the reads and how often.
+
+|              | Background acquisition | On-demand acquisition |
+| ------------ | ---------------------- | --------------------- |
+| **How**      | Call `start()`. A background daemon reads from the instrument at a fixed, configurable rate. Pull the latest N values with `get_channel()` when you need them. | Skip `start()`. Call read methods (`read_analog()`, `get_voltage()`, …) only when you want a measurement. Each call reads the device, and publishes the result if a publisher is attached. |
+| **Best for** | Apps where data should always be available and publishing. | Apps that need measurements only at specific times; lower system and bus load. DMMs are a good example. |
+
+<Note>
+**Recommendation**
+
+Use the **background daemon pattern** for most workflows. Data is always available and publishing, and it often simplifies application code, especially for buffered acquisitions from a DAQ where you'd need to manage servicing a buffer yourself.
+
+Depending on your application, you may never need to call `get_channel()`, but the background daemon will always publish measurements for later analysis in tools like Nominal Core.
+
+</Note>
+
+
 ## Measurements and Commands
 Within an `Instrument`, data is packaged into `Measurement` and `Command` objects when data is read from or sent to an instrument, respectively.
 
@@ -92,3 +111,14 @@ psu_legacy = InstroPSU(name="main", driver=BK9115(...), num_channels=1, legacy_n
 **Limitations:**
 - All-or-nothing per instrument. There is no way to use new names for some channels and legacy for others on the same instance.
 - `legacy_naming` is scheduled for **removal in v2.0**. Plan to migrate downstream consumers within that window.
+
+
+
+
+# High Level Architecture
+
+1. **Instrument Types / HALs**: Distinct classes for each type of instrument (e.g., DAQ, PSU, ELoad, I2C), each providing an opinionated and unified usage model. This design exposes a tailored interface that reflects typical usage patterns, making common workflows consistent across different vendors and models.
+2. **Drivers**: Vendor- or model-specific drivers that handle low-level communication intricacies. HALs rely on these drivers to implement vendor- or model-specific details within the context of their higher level usage model.
+3. **Publishers**: Components responsible for recording or transmitting instrument data and commands. For example, streaming measurement data to a dataset. Instruments own attached publishers and close them during teardown.
+
+<img src="/images/diagram_architecture.png" />

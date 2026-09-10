@@ -5,26 +5,46 @@ description: Installing instro
 
 
 
-`instro` is published on [PyPI](https://pypi.org/project/instro/), and can be installed using either [`uv`](https://docs.astral.sh/uv/) (recommended) or `pip`. `instro` supports Python 3.10-3.14.
+`instro` is published on [PyPI](https://pypi.org/project/instro/), and can be installed using either [`uv`](https://docs.astral.sh/uv/) or `pip`. `instro` supports Python 3.10-3.14.
+
+<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', alignItems: 'start' }}>
 ```bash
-$ uv add instro # or 
-$ pip install instro 
+uv add instro
 ```
+
+```bash
+pip install instro
+```
+</div>
 
 ## Additional Packages
 
 `instro` has additional packages for utilizing vendor instruments that require their own dependencies.  These are grouped by indivdual vendors and by instrument type where useful. 
 
+<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', alignItems: 'start' }}>
 ```bash
-# replace 'uv add' with 'pip install' if your a pip'er 
-$ uv add "instro[nidaq]"   
-$ uv add "instro[daq]"  # or install all daq packages
-$ uv add "instro[all]"  # install everything
+# install ni-daq
+uv add "instro[nidaq]"
+# or install all DAQs
+uv add "instro[daq]"  
+# install everything
+uv add "instro[all]" 
 ```
-<Info>These packages supply Python dependencies. See [Driver Dependencies](/instrumentation/driver-dependencies) for  external installers  required for some instruments.</Info>
+
+```bash
+# install ni-daq
+pip install "instro[nidaq]"
+# or install all DAQs
+pip install "instro[daq]"  
+# install everything
+pip install "instro[all]"  
+```
+</div>
+
+<Info>These packages supply Python dependencies. See [Driver Dependencies](/instrumentation/driver-dependencies) for external installers required for some instruments.</Info>
 Here is a table of available packages:
 
-| Class | Package | Contents |
+| Instrument Type | Package | Contents |
 | --- | --- | --- |
 | **All** | `all` | All drivers in this table|
 | **DAQ** | `daq` | All DAQ drivers |

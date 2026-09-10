@@ -18,32 +18,36 @@ daq.open()
 measurement = daq.read_analog()
 ```
 
+
+### Purpose
+The test and measurement field has long been plagued by *reinventing the wheel*, which drives  up costs. `instro` is an [open-source](https://github.com/nominal-io/instro) Python library for interfacing test and measurement hardware from one unified, typed API. It provides virtual instruments that are **vendor-agnostic** which use `Publishers` automatically stream data to a file, [Nominal](https://nominal.io), or a destination of your own.
+
+<div style={{ display: 'flex', justifyContent: 'center', margin: '1.5rem 0' }}>
+  <iframe
+    width="560"
+    height="315"
+    src="https://www.youtube.com/embed/l8sUYvgwfbc"
+    title="instro overview video"
+    frameBorder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowFullScreen
+  />
+</div>
+
 <div align="center">
   Next --> [Quickstart](/instrumentation/quickstart)  | [Installation](/instrumentation/installation) | [Examples](/instrumentation/examples)
 </div>
-### Purpose
-The test and measurement field has long been plagued by *reinventing the wheel*, leading to immense  costs. `instro` is an [open-source](https://github.com/nominal-io/instro) Python library for interfacing test and measurement hardware from one unified, typed API. It provides virtual instruments that are **vendor-agnostic**. In addition, `Publishers`  allow  data to be automatically streamed to a file, [Nominal](https://nominal.io), or a destination of your own.
  
 <SupportedInstruments />
 
 
-## Custom instruments
+## Ok, lets go.
+ 
 
-Build a new instrument type or vendor driver against `Instrument`.
-
-<Columns cols={2}>
-  <Card title="Instrument" icon="code" href="/instrumentation/library">
-    Create your own Instrument category using the tools in `instro`
-  </Card>
-
-  <Card title="Request a driver" icon="sparkles" href="https://community.instro.nominal.io/c/driver-feature-requests/9">
-    Start a thread on our community forum
-  </Card>
+<Columns cols={3}>
+  <Card title="Quickstart" icon="rocket" href="/instrumentation/quickstart"></Card>
+  <Card title="Installation" icon="download" href="/instrumentation/installation"> </Card>
+  <Card title="Examples" icon="code" href="/instrumentation/examples"> </Card>
 </Columns>
 
-## Publishing data
-
-<Card title="Publishers" icon="rocket" href="/instrumentation/publishers">
-  Stream measurements to Nominal Core, Nominal Connect, or a local file with a single line of configuration.
-</Card>
-
+ 

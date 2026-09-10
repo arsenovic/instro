@@ -2,19 +2,19 @@
 title: Driver Dependencies
 description: External vendor drivers and libraries required to use instro
 ---
-
-`instro` depends on external software to be installed for various hardware interactions to be successful. These must be installed on your system before you can use the corresponding `instro` drivers.
+## Overview
+`instro` depends on external software to be installed for various hardware interactions to be successful.  
 
 <Note>
 **Understanding the distinction**: These vendor-installable drivers are **different from** the driver classes that an `Instrument` is composed with:
 
-- **Vendor-installable drivers**: External libraries/drivers developed by instrument vendors that must be installed to your system operating system. These are necessary to install, regardless of using `instro`, to interact with the vendor hardware on the system in any way/environment.
+- **Vendor-installable drivers**: External libraries/drivers developed by instrument vendors that must be installed to your system operating system.  
 - **`instro` driver classes**: The vendor/model-specific Python code that `Instrument` uses to interact with the external software drivers.
 </Note>
 
-## Overview
 
-Before using `instro` with specific instrument types, you must install the corresponding vendor driver or library. The table below shows which vendor drivers are required for which `instro` instrument types:
+
+ The table below shows which vendor drivers are required for which `instro` instrument types:
 
 | Vendor Driver | Required For | Used By instro Drivers |
 |--------------|--------------|------------------------|
@@ -25,31 +25,27 @@ Before using `instro` with specific instrument types, you must install the corre
 | **Total Phase USB Drivers** | Total Phase Aardvark I2C/SPI Host Adapter | `Aardvark` |
 
 ## VISA
+### Used By 
+VISA (Virtual Instrument Software Architecture) is used by `instro` for all SCPI/VISA based instrument connections. Some support is provided when you install `instro`, but you may need additional drivers.
 
-VISA (Virtual Instrument Software Architecture) is used by `instro` for all SCPI/VISA based instrument connections. `instro` installs `pyvisa`, the `pyvisa-py` Python backend, and every backend library `pyvisa-py` can use, so TCP/IP (SOCKET, VXI-11, HiSLIP), USB-TMC, serial, and VICP resources work without a vendor VISA runtime. GPIB also uses `pyvisa-py`, but the hardware additionally needs a native GPIB driver (see below). PXI and VXI are the only interfaces a pure-Python backend cannot drive; those still require a vendor runtime.
+### Instro installs
+installing `instro` also installs `pyvisa`, `pyvisa-py`, and the full set of `pyvisa-py` backend libraries (`pyusb`, bundled libusb via `libusb-package`, `pyserial`, `psutil`, `zeroconf`, `pyvicp`, and `gpib-ctypes`). TCP/IP, USB-TMC, serial, HiSLIP, and VICP resources work with no extra setup
 
 - **pyvisa** (Python VISA library)
 - **pyvisa-py** (default Python backend)
 - **pyusb + libusb** (USB-TMC backend; libusb ships bundled via `libusb-package`)
 - **pyserial** (ASRL/serial backend)
 - **psutil, zeroconf, pyvicp** (TCPIP discovery, HiSLIP discovery, and VICP support)
-- **gpib-ctypes + a native GPIB driver** (GPIB backend; the driver is vendor/OS specific)
+
+### you may need 
+- **Native GPIB driver**  - NI-488.2 for NI GPIB interfaces, or linux-gpib on Linux. 
 - **Vendor VISA runtimes** (optional; required for PXI/VXI or vendor-specific transports)
-
-### Installation
-
-**Default Python backend:**
-- Installed with `instro`: `pyvisa`, `pyvisa-py`, and the full set of `pyvisa-py` backend libraries (`pyusb`, bundled libusb via `libusb-package`, `pyserial`, `psutil`, `zeroconf`, `pyvicp`, and `gpib-ctypes`). TCP/IP, USB-TMC, serial, HiSLIP, and VICP resources work with no extra setup.
-
-**GPIB:**
-- `instro` installs the `gpib-ctypes` binding, but GPIB hardware also needs a native driver: NI-488.2 for NI GPIB interfaces, or linux-gpib on Linux. Install the driver your interface requires.
-
-**Vendor VISA backend:**
-- Download and install the runtime required by your instrument vendor (for PXI/VXI, or vendor-specific transports).
+ 
+ 
 
 ## NI-DAQmx
 
-NI-DAQmx is the National Instruments driver for their DAQ devices. This driver must be installed before using National Instruments DAQ devices with `instro`.
+NI-DAQmx is the National Instruments driver for their DAQ devices. It must be installed before using National Instruments DAQ devices with `instro`.
 
 ### Used By
 
@@ -113,6 +109,3 @@ Total Phase USB Drivers are required to communicate with Total Phase Aardvark I2
 
 ---
 
-## Adding New Drivers
-
-As `instro` adds support for new instrument vendors, additional vendor-installable drivers may be required. This page will be updated to document any new dependencies. If you're developing a custom driver that requires a vendor-installable driver not documented here, please ensure your documentation clearly states this requirement.

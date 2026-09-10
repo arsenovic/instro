@@ -22,10 +22,6 @@
               "instrumentation/quickstart",
               "instrumentation/installation",
               "instrumentation/driver-dependencies",
-              "instrumentation/overview",
-              "instrumentation/scope",
-              
-              
               "instrumentation/cli"
             ]
           },
@@ -35,8 +31,9 @@
             "root": "instrumentation/concepts",
             "expanded": true,
             "pages": [
-              "instrumentation/publishers",
               "instrumentation/library",
+              "instrumentation/publishers",
+
               "instrumentation/exceptions",
               "instrumentation/custom-instruments",
               "instrumentation/contrib"
