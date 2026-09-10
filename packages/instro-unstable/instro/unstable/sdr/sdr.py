@@ -21,8 +21,8 @@ from typing import Any, Callable
 
 import numpy as np
 
-from instro.lib import Instrument, Measurement
-from instro.lib.instrument import publish_measurement
+from instro.lib import Command, Instrument, Measurement
+from instro.lib.instrument import publish_command, publish_measurement
 
 
 class SDRDriverBase(abc.ABC):
@@ -168,45 +168,43 @@ class InstroSDR(Instrument):
             timestamp = time.time_ns()
         return self._package_measurement(descriptor, val, timestamp, **kwargs)
 
-    def set_center_freq(self, frequency_hz: float, **kwargs: Any):
-        """Set RF center frequency and publish the command."""
+    @publish_command
+    def _execute_command(
+        self, driver_method: Callable[[float], None], value: float, descriptor: str, **kwargs: Any
+    ) -> Command:
+        """Execute a single-argument driver write and return a Command for the written value."""
         with self._resource_lock:
-            self._driver.set_center_freq(frequency_hz)
+            driver_method(value)
             timestamp = time.time_ns()
-        return self._package_command("center_freq.cmd", float(frequency_hz), timestamp, **kwargs)
+        return self._package_command(f"{descriptor}.cmd", value, timestamp, **kwargs)
+
+    def set_center_freq(self, frequency_hz: float, **kwargs: Any) -> Command:
+        """Set RF center frequency and publish the command."""
+        return self._execute_command(self._driver.set_center_freq, float(frequency_hz), "center_freq", **kwargs)
 
     def get_center_freq(self, **kwargs: Any) -> Measurement:
         """Query the current RF center frequency in Hz."""
         return self._execute_measurement(self._driver.get_center_freq, "center_freq", **kwargs)
 
-    def set_sample_rate(self, sample_rate_hz: float, **kwargs: Any):
+    def set_sample_rate(self, sample_rate_hz: float, **kwargs: Any) -> Command:
         """Set the sample rate and publish the command."""
-        with self._resource_lock:
-            self._driver.set_sample_rate(sample_rate_hz)
-            timestamp = time.time_ns()
-        return self._package_command("sample_rate.cmd", float(sample_rate_hz), timestamp, **kwargs)
+        return self._execute_command(self._driver.set_sample_rate, float(sample_rate_hz), "sample_rate", **kwargs)
 
     def get_sample_rate(self, **kwargs: Any) -> Measurement:
         """Query the current sample rate in samples per second."""
         return self._execute_measurement(self._driver.get_sample_rate, "sample_rate", **kwargs)
 
-    def set_gain(self, gain_db: float, **kwargs: Any):
+    def set_gain(self, gain_db: float, **kwargs: Any) -> Command:
         """Set the gain in dB and publish the command."""
-        with self._resource_lock:
-            self._driver.set_gain(gain_db)
-            timestamp = time.time_ns()
-        return self._package_command("gain.cmd", float(gain_db), timestamp, **kwargs)
+        return self._execute_command(self._driver.set_gain, float(gain_db), "gain", **kwargs)
 
     def get_gain(self, **kwargs: Any) -> Measurement:
         """Query the current gain in dB."""
         return self._execute_measurement(self._driver.get_gain, "gain", **kwargs)
 
-    def set_bandwidth(self, bandwidth_hz: float, **kwargs: Any):
+    def set_bandwidth(self, bandwidth_hz: float, **kwargs: Any) -> Command:
         """Set the bandwidth in Hz and publish the command."""
-        with self._resource_lock:
-            self._driver.set_bandwidth(bandwidth_hz)
-            timestamp = time.time_ns()
-        return self._package_command("bandwidth.cmd", float(bandwidth_hz), timestamp, **kwargs)
+        return self._execute_command(self._driver.set_bandwidth, float(bandwidth_hz), "bandwidth", **kwargs)
 
     def get_bandwidth(self, **kwargs: Any) -> Measurement:
         """Query the current IF or filter bandwidth in Hz."""

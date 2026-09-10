@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from instro.lib import Command
 from instro.unstable.sdr import InstroSDR, SDRDriverBase
 
 
@@ -136,3 +137,26 @@ def test_06_instro_sdr_getters_publish_to_attached_publishers() -> None:
 
     assert len(published) == 1
     assert published[0].channel_data == {"rtl.gain": [20.0]}
+
+
+@pytest.mark.parametrize(
+    ("setter_name", "value", "descriptor"),
+    [
+        ("set_center_freq", 89_700_000.0, "center_freq"),
+        ("set_sample_rate", 2_400_000.0, "sample_rate"),
+        ("set_gain", 30.0, "gain"),
+        ("set_bandwidth", 1_500_000.0, "bandwidth"),
+    ],
+)
+def test_07_instro_sdr_setters_publish_a_command(setter_name: str, value: float, descriptor: str) -> None:
+    """Regression: setters packaged a Command but never published it -- every set_* was dropped."""
+    published = []
+    publisher = MagicMock()
+    publisher.publish.side_effect = lambda data, **kwargs: published.append(data)
+    sdr = InstroSDR(name="rtl", driver=_MinimalSDRDriver(), publishers=[publisher])
+
+    command = getattr(sdr, setter_name)(value)
+
+    assert isinstance(command, Command)
+    assert published == [command]
+    assert command.channel_data == {f"rtl.{descriptor}.cmd": value}
