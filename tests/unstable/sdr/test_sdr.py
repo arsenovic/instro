@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import time
 from unittest.mock import MagicMock
@@ -300,3 +301,26 @@ def test_15_compute_psd_returns_the_array_without_publishing() -> None:
     assert freqs.shape == power_db.shape == (1024,)
     assert np.all(np.diff(freqs) > 0)
     assert freqs[int(np.argmax(power_db))] == pytest.approx(100_300_000.0, abs=2_400_000.0 / 1024)
+
+
+def test_16_attribute_lookup_before_driver_is_set_does_not_recurse() -> None:
+    """Regression: __getattr__ read self._driver unguarded, so a lookup before it was set recursed."""
+    half_built = InstroSDR.__new__(InstroSDR)  # _driver not assigned yet
+
+    with pytest.raises(AttributeError):
+        half_built.anything  # noqa: B018 -- the attribute access itself is under test
+
+    # copy.copy consults dunders that InstroSDR lacks, which is what tripped the recursion.
+    assert copy.copy(InstroSDR(name="rtl", driver=_MinimalSDRDriver())) is not None
+
+
+def test_17_instro_sdr_does_not_delegate_to_the_driver() -> None:
+    """Driver methods stay behind the HAL: delegation bypassed the lock and the publishing path."""
+    driver = _MinimalSDRDriver()
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    with pytest.raises(AttributeError, match="InstroSDR"):
+        sdr.read_iq  # noqa: B018 -- the attribute access itself is under test
+
+    assert sdr.driver is driver
+    assert sdr.driver.read_iq(4).shape == (4,)
