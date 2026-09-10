@@ -602,7 +602,6 @@ dependencies = [
     { name = "nominal" },
     { name = "pydantic" },
     { name = "pymodbus" },
-    { name = "pyrtlsdr", extra = ["lib"] },
     { name = "pyserial" },
     { name = "pyvisa" },
     { name = "pyvisa-py", extra = ["gpib-ctypes", "hislip-discovery", "psutil", "usb-full", "vicp"] },
@@ -695,7 +694,6 @@ requires-dist = [
     { name = "nominal", specifier = ">=1.99.0,<2.0.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pymodbus", specifier = ">=3.10,<3.13" },
-    { name = "pyrtlsdr", extras = ["lib"], specifier = ">=0.5.0" },
     { name = "pyserial", specifier = ">=3.5" },
     { name = "pyvisa", specifier = ">=1.15" },
     { name = "pyvisa-py", extras = ["usb-full", "gpib-ctypes", "psutil", "hislip-discovery", "vicp"], specifier = ">=0.8.1,<0.9" },
@@ -826,6 +824,7 @@ dependencies = [
     { name = "gs-usb" },
     { name = "instro" },
     { name = "libusb-package" },
+    { name = "pyrtlsdr", extra = ["lib"] },
     { name = "pyserial" },
     { name = "python-can" },
 ]
@@ -835,6 +834,7 @@ requires-dist = [
     { name = "gs-usb", specifier = ">=0.3" },
     { name = "instro", editable = "." },
     { name = "libusb-package", specifier = ">=1.0.26" },
+    { name = "pyrtlsdr", extras = ["lib"], specifier = ">=0.5.0" },
     { name = "pyserial", specifier = ">=3.5" },
     { name = "python-can", specifier = ">=4.3" },
 ]
