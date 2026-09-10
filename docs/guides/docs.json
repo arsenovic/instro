@@ -11,19 +11,21 @@
   "navigation": {
     "tabs": [
       {
-        "tab": "Documentation",
+        "tab": "Docs",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Overview",
             "icon": "rocket",
-            "root": "getting-started",
+            "root": "overview",
             "expanded": true,
             "pages": [
               "instrumentation/quickstart",
-              "instrumentation/overview",
-              "instrumentation/scope",
               "instrumentation/installation",
               "instrumentation/driver-dependencies",
+              "instrumentation/overview",
+              "instrumentation/scope",
+              
+              
               "instrumentation/cli"
             ]
           },
@@ -219,25 +221,15 @@
             ]
           }
         ]
-      }
+      },
+      {"tab": "SDK",
+    "href": "https://nominal-io.github.io/instro/"},
+    {"tab": "GitHub",
+    "href": "https://github.com/nominal-io/instro"}
     ],
     "global": {
       "anchors": [
-        {
-          "anchor": "SDK Reference",
-          "href": "https://nominal-io.github.io/instro/",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "GitHub",
-          "href": "https://github.com/nominal-io/instro",
-          "icon": "github"
-        },
-        {
-          "anchor": "Changelog",
-          "href": "https://nominal-io.github.io/instro/changelog/",
-          "icon": "book"
-        }
+                 
       ]
     }
   },
@@ -248,8 +240,12 @@
   "navbar": {
     "links": [
       {
-        "label": "Community",
+        "label": "Forum",
         "href": "https://community.instro.nominal.io"
+      },
+      {
+        "label": "Chat",
+        "href": "https://discord.gg/nN4RzhQkr"
       }
     ],
     "primary": {

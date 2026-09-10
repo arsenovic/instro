@@ -1,27 +1,3 @@
----
-title: "instro"
-description: "An open-source, vendor-agnostic Python library for interfacing with hardware test equipment."
----
-
-
-### Quickstart
-```python
-from instro.daq.drivers import NIDAQDriver,LabJackTSeriesDriver
-from instro.daq import InstroDAQ
-
-daq = InstroDAQ(
-  name    = "myDAQ", 
-  driver  = LabJackTSeriesDriver(device_id="1234") 
-  #driver = NIDAQDriver(device_id="Dev1") # swap drivers, same code
-  )
-daq.open() 
-measurement = daq.read_analog()
-```
-
-### Purpose
-The test and measurement field has long been plagued by *reinventing the wheel*, leading to immense  costs. `instro` is an [open-source](https://github.com/nominal-io/instro) Python library for interfacing test and measurement hardware from one unified, typed API. It provides virtual instruments that are **vendor-agnostic**. In addition, `Publishers`  allow  data to be automatically streamed to a file, [Nominal](https://nominal.io), or a destination of your own.
-
-
 ## Supported instruments
 ### Oscilloscopes: `InstroScope` 
 
@@ -271,26 +247,4 @@ The test and measurement field has long been plagued by *reinventing the wheel*,
   </Card>
 </Columns>
 
-## Custom instruments
-
-Build a new instrument type or vendor driver against `Instrument`.
-
-<Columns cols={2}>
-  <Card title="Instrument" icon="code" href="/instrumentation/library">
-    Create your own Instrument category using the tools in `instro`
-  </Card>
-
-  <Card title="Request a driver" icon="sparkles" href="https://community.instro.nominal.io/c/driver-feature-requests/9">
-    Start a thread on our community forum
-  </Card>
-</Columns>
-
-## Publishing data
-
-<Card title="Publishers" icon="rocket" href="/instrumentation/publishers">
-  Stream measurements to Nominal Core, Nominal Connect, or a local file with a single line of configuration.
-</Card>
-
-<div align="center">
-  [Quickstart](/instrumentation/quickstart) | [Overview](/instrumentation/overview) | [Installation](/instrumentation/installation) | [Examples](/instrumentation/examples)
-</div>
+ 
