@@ -66,7 +66,8 @@
               "instrumentation/daq",
               "instrumentation/oscilloscope",
               "instrumentation/awg",
-              "instrumentation/flowcontroller"
+              "instrumentation/flowcontroller",
+              "instrumentation/sdr"
             ]
           },
           {
@@ -216,6 +217,13 @@
             "pages": [
               "instrumentation/examples/unstable/flowcontroller/flowcontroller",
               "instrumentation/examples/unstable/flowcontroller/alicat_mc"
+            ]
+          },
+          {
+            "group": "SDR (Unstable)",
+            "pages": [
+              "instrumentation/examples/unstable/sdr/sdr_band_scan",
+              "instrumentation/examples/unstable/sdr/sdr_basic"
             ]
           }
         ]

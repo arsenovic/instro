@@ -1,0 +1,307 @@
+---
+title: Software Defined Radio (SDR)
+description: Using InstroSDR to capture IQ samples and spectrum summaries
+---
+
+# InstroSDR
+
+<Warning>
+**Unstable API**
+
+`InstroSDR` ships in the `instro-unstable` package. Its API is not settled and may change without notice between releases. Install it with `pip install "instro[unstable]"`. See [Unstable modules](/instrumentation/installation#unstable-modules) for details.
+</Warning>
+
+`InstroSDR` is a hardware abstraction layer (HAL) for software defined radios. The category class defines the vendor-independent API (`set_center_freq`, `set_sample_rate`, `set_gain`, `measure_iq`, `measure_spectrum`, …). A vendor-specific driver owns its connection details and translates those calls into vendor commands.
+
+## Supported Vendors
+
+- **RTL-SDR**: any `librtlsdr`-compatible dongle via `pyrtlsdr` (`RTLSDR`)
+
+If your vendor or model is not listed, see [Custom Driver Development](#custom-driver-development) below.
+
+## Key Concepts
+
+### Driver Composition
+
+An `InstroSDR` is built from a concrete driver:
+
+```python
+InstroSDR("name", driver=RTLSDR(device_index=0))
+```
+
+`device_index` selects among multiple connected dongles. Any additional keyword arguments
+pass through to `rtlsdr.RtlSdr`, so `RTLSDR(serial_number="00000001")` addresses a specific
+device regardless of enumeration order.
+
+### Lifecycle
+
+The driver captures connection settings on construction and takes the USB handle in
+`open()`. `close()` releases it, and a closed driver can be reopened:
+
+```python
+sdr = InstroSDR("rtl", driver=RTLSDR(device_index=0))
+sdr.open()
+try:
+    ...
+finally:
+    sdr.close()
+```
+
+Using an unopened driver raises `RuntimeError` rather than reaching into a closed handle.
+
+### IQ blocks and their timebase
+
+`measure_iq(n_samples=N)` returns one `Measurement` holding `N` samples across paired
+`.i` and `.q` channels, not one `Measurement` per sample. The two channels share a
+timestamp vector whose spacing comes from the rate the **device** reports, not from the
+host clock, so an IQ block carries the radio's own notion of elapsed time.
+
+Blocks are *backstamped*: the read returns after the samples were captured, so the block
+is placed to **end** at the moment the read completed. A block sometimes overlaps its
+predecessor, meaning the device had samples buffered and the read returned faster than
+the block's own duration. Such a block continues the previous block's timeline instead.
+A wider gap re-anchors to the wall clock, so genuine dropouts remain visible as gaps.
+
+<Note>
+`measure_iq` acquires one block per call. Samples arriving between calls are lost, and
+that loss shows up as a gap in the timestamps. There is no gapless streaming API yet.
+</Note>
+
+### Reassembling the complex signal
+
+`.i` is the real part and `.q` the imaginary part:
+
+```python
+z = np.asarray(iq.channel_data["rtl.i"]) + 1j * np.asarray(iq.channel_data["rtl.q"])
+```
+
+Swapping them conjugates the signal, which mirrors the spectrum about the center frequency.
+
+### Spectrum
+
+`measure_spectrum()` publishes four **scalar** channels summarizing a Hann-windowed FFT of
+one block. It does not publish the spectrum array: a power spectrum is a function of
+frequency at a single instant, and `Measurement` describes channels over time.
+
+For the full array, `compute_psd()` returns `(frequencies_hz, power_db)` to the caller and
+publishes nothing:
+
+```python
+freqs, power_db = sdr.compute_psd(n_samples=16384)
+peak = freqs[int(np.argmax(power_db))]
+```
+
+<Note>
+A direct-conversion receiver leaks its local oscillator into the DC bin, which lands on the
+center frequency. Mask a few kHz around the center before searching for a peak, or the
+strongest bin will always be that spike.
+</Note>
+
+## Creating an InstroSDR Instance
+
+```python
+from instro.unstable.sdr import InstroSDR
+from instro.unstable.sdr.drivers import RTLSDR
+
+sdr = InstroSDR(
+    name="rtl",
+    driver=RTLSDR(device_index=0),
+    publishers=[...],
+)
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `name` | `str` | Channel-name prefix for published data |
+| `driver` | `SDRDriverBase` | Concrete vendor driver |
+| `publishers` | `list[Publisher]` | Optional; publishers receiving emitted data |
+| `**kwargs` | | Default tags; `dataset_rid=` attaches a `NominalCorePublisher` |
+
+## Examples
+
+### Basic Usage
+
+```python
+import numpy as np
+
+from instro.unstable.sdr import InstroSDR
+from instro.unstable.sdr.drivers import RTLSDR
+
+sdr = InstroSDR(name="rtl", driver=RTLSDR(device_index=0))
+sdr.open()
+try:
+    sdr.set_center_freq(89.7e6)
+    sdr.set_sample_rate(2.4e6)
+    sdr.set_gain(30.0)
+
+    print(f"tuned to {sdr.get_center_freq().latest / 1e6:.4f} MHz")
+
+    iq = sdr.measure_iq(n_samples=262144)
+    z = np.asarray(iq.channel_data["rtl.i"]) + 1j * np.asarray(iq.channel_data["rtl.q"])
+    print(f"mean power {10 * np.log10(np.mean(np.abs(z) ** 2)):.1f} dB")
+
+    spectrum = sdr.measure_spectrum(n_samples=262144)
+    print(spectrum.channel_data["rtl.spectrum.peak_freq_hz"][0])
+finally:
+    sdr.close()
+```
+
+### Sample-count granularity
+
+`librtlsdr` transfers whole 512-byte USB blocks and an IQ sample is two bytes, so
+`n_samples` must be a positive multiple of `RTLSDR.READ_GRANULARITY` (256). A request that
+is not raises `ValueError` before the device is touched. A short read makes the vendor
+library close the device.
+
+## Published channels
+
+Every measurement/command call produces a channel keyed under `{name}.{descriptor}`, where
+`{name}` is the constructor argument and `{descriptor}` is the row below.
+
+| Method | Descriptor | Type |
+|--------|------------|------|
+| `set_center_freq()` | `center_freq.cmd` | command |
+| `set_sample_rate()` | `sample_rate.cmd` | command |
+| `set_gain()` | `gain.cmd` | command |
+| `set_bandwidth()` | `bandwidth.cmd` | command |
+| `get_center_freq()` | `center_freq` | telemetry |
+| `get_sample_rate()` | `sample_rate` | telemetry |
+| `get_gain()` | `gain` | telemetry |
+| `get_bandwidth()` | `bandwidth` | telemetry |
+| `measure_iq()` | `i`, `q` | telemetry (one value per sample) |
+| `measure_spectrum()` | `spectrum.peak_power_db` | telemetry |
+| `measure_spectrum()` | `spectrum.peak_freq_hz` | telemetry |
+| `measure_spectrum()` | `spectrum.mean_power_db` | telemetry |
+| `measure_spectrum()` | `spectrum.occupied_bw_hz` | telemetry |
+
+<Note>
+`compute_psd()` returns `(frequencies_hz, power_db)` as numpy arrays directly and does not
+publish. Every other readback listed above publishes a `Measurement` on the descriptor shown.
+
+`occupied_bw_hz` is the width of the band holding 99% of total power. Over a span that is
+mostly noise it approaches the full sample rate; it is only meaningful on a clean signal.
+</Note>
+
+## Method Reference
+
+| Method | Returns | Description |
+|---|---|---|
+| `open()` | `None` | Open the device |
+| `close()` | `None` | Close the device, stop the daemon, close publishers |
+| `set_center_freq(frequency_hz)` | `Command` | Tune the RF center frequency |
+| `get_center_freq()` | `Measurement` | Center frequency the device accepted |
+| `set_sample_rate(sample_rate_hz)` | `Command` | Set the IQ sample rate |
+| `get_sample_rate()` | `Measurement` | Sample rate the device accepted |
+| `set_gain(gain_db)` | `Command` | Set receive gain |
+| `get_gain()` | `Measurement` | Current gain |
+| `set_bandwidth(bandwidth_hz)` | `Command` | Set IF/filter bandwidth (`0` means auto) |
+| `get_bandwidth()` | `Measurement` | Current bandwidth |
+| `measure_iq(n_samples)` | `Measurement \| None` | One IQ block as paired `.i`/`.q` channels |
+| `measure_spectrum(n_samples)` | `Measurement \| None` | Four scalar spectrum features |
+| `compute_psd(n_samples)` | `tuple[ndarray, ndarray] \| None` | `(frequencies_hz, power_db)`; publishes nothing |
+| `driver` | `SDRDriverBase` | The underlying driver |
+
+<Note>
+Tuners quantize both frequency and sample rate, so the value a getter reports can differ
+from what was requested. Read back rather than assuming the request took effect exactly.
+</Note>
+
+# Custom Driver Development
+
+## Overview
+
+A driver subclasses `SDRDriverBase` and implements the vendor's transport. It owns its own
+connection lifecycle and holds no reference back to `InstroSDR`.
+
+## SDRDriverBase Interface
+
+Every method is currently required:
+
+| Method | Signature | Description |
+|---|---|---|
+| `open` | `() -> None` | Open the transport or SDR handle |
+| `close` | `() -> None` | Close it |
+| `set_center_freq` | `(frequency_hz: float) -> None` | Tune |
+| `get_center_freq` | `() -> float` | Read the tuned frequency |
+| `set_sample_rate` | `(sample_rate_hz: float) -> None` | Set the IQ rate |
+| `get_sample_rate` | `() -> float` | Read the IQ rate |
+| `set_gain` | `(gain_db: float) -> None` | Set gain |
+| `get_gain` | `() -> float` | Read gain |
+| `set_bandwidth` | `(bandwidth_hz: float) -> None` | Set IF/filter bandwidth |
+| `get_bandwidth` | `() -> float` | Read bandwidth |
+| `read_iq` | `(n_samples: int) -> np.ndarray` | Return a complex IQ block |
+
+<Warning>
+`get_sample_rate` must report the rate the hardware is actually running at, not the value
+last requested. `InstroSDR` derives every IQ timestamp from it, so a stale or nominal value
+mislabels the timebase of everything the driver produces.
+</Warning>
+
+## Implementation Example: RTLSDR Driver
+
+```python
+from typing import Any, ClassVar
+
+import numpy as np
+
+from instro.unstable.sdr.sdr import SDRDriverBase
+
+
+class RTLSDR(SDRDriverBase):
+    """RTL-SDR dongle. Connection params captured in ``__init__``; USB opens on ``open()``."""
+
+    READ_GRANULARITY: ClassVar[int] = 256
+
+    def __init__(self, device_index: int = 0, **kwargs: Any):
+        self._device_index = device_index
+        self._kwargs = kwargs
+        self._device: Any = None
+
+    def open(self) -> None:
+        from rtlsdr import RtlSdr  # vendor SDK stays at the driver boundary
+
+        if self._device is None:
+            self._device = RtlSdr(device_index=self._device_index, **self._kwargs)
+
+    def close(self) -> None:
+        if self._device is not None:
+            self._device.close()
+            self._device = None
+
+    def set_center_freq(self, frequency_hz: float) -> None:
+        self._require_device().center_freq = float(frequency_hz)
+
+    def get_center_freq(self) -> float:
+        return float(self._require_device().center_freq)
+
+    # ... remaining accessors follow the same shape ...
+
+    def read_iq(self, n_samples: int) -> np.ndarray:
+        if n_samples <= 0 or n_samples % self.READ_GRANULARITY:
+            raise ValueError(f"n_samples must be a positive multiple of {self.READ_GRANULARITY}")
+        return np.asarray(self._require_device().read_samples(n_samples), dtype=np.complex128)
+
+    def _require_device(self) -> Any:
+        if self._device is None:
+            raise RuntimeError("RTLSDR driver is not open; call open() first")
+        return self._device
+```
+
+Importing the vendor SDK inside `open()` rather than at module scope keeps the dependency
+optional and lets the driver be unit-tested without hardware attached.
+
+## Using a Custom Driver
+
+```python
+sdr = InstroSDR(name="my_radio", driver=MyVendorSDR(...))
+sdr.open()
+```
+
+## Summary
+
+`InstroSDR` gives SDRs the same shape as every other instro category: a vendor-independent
+HAL over a driver that owns its transport. IQ blocks carry the device's own timebase and
+publish as paired `.i`/`.q` channels; spectrum work publishes scalar features and hands the
+full array back to the caller.
