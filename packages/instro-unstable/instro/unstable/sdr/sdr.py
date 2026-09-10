@@ -15,6 +15,7 @@ shared timebase, not for millions of individual sample-level events.
 from __future__ import annotations
 
 import abc
+import logging
 import threading
 import time
 from typing import Any, Callable
@@ -23,6 +24,8 @@ import numpy as np
 
 from instro.lib import Command, Instrument, Measurement
 from instro.lib.instrument import publish_command, publish_measurement
+
+logger = logging.getLogger(__name__)
 
 
 class SDRDriverBase(abc.ABC):
@@ -91,6 +94,8 @@ class InstroSDR(Instrument):
         super().__init__(name, **kwargs)
         self._driver = driver
         self._resource_lock = threading.Lock()
+        self._last_iq_timestamp: int | None = None
+        self._sample_period_warning_issued = False
 
     def open(self) -> None:
         """Open the underlying driver."""
@@ -106,6 +111,29 @@ class InstroSDR(Instrument):
         """Return the underlying hardware driver."""
         return self._driver
 
+    def _iq_timestamps(self, t_read_ns: int, sample_rate_hz: float, length: int) -> list[int]:
+        """Nanosecond timestamps for one IQ block, spaced at the device's actual sample period."""
+        if sample_rate_hz <= 0:
+            raise ValueError(f"driver reported a non-positive sample rate: {sample_rate_hz}")
+        if sample_rate_hz > 1e9 and not self._sample_period_warning_issued:
+            self._sample_period_warning_issued = True
+            logger.warning(
+                "Sample rate %s Sa/s is faster than the 1 GSa/s that integer-nanosecond timestamps "
+                "can resolve; samples in each block will share timestamps.",
+                sample_rate_hz,
+            )
+
+        period_ns = 1e9 / sample_rate_hz
+        offsets = [round(i * period_ns) for i in range(length)]
+
+        t0 = t_read_ns - offsets[-1]
+        if self._last_iq_timestamp is not None and t0 <= self._last_iq_timestamp:
+            t0 = self._last_iq_timestamp + round(period_ns)
+
+        timestamps = [t0 + offset for offset in offsets]
+        self._last_iq_timestamp = timestamps[-1]
+        return timestamps
+
     @publish_measurement
     def measure_iq(self, n_samples: int = 1024, **kwargs: Any) -> Measurement | None:
         """Return a ``Measurement`` containing one IQ buffer block.
@@ -119,13 +147,15 @@ class InstroSDR(Instrument):
 
         with self._resource_lock:
             data = np.asarray(self._driver.read_iq(n_samples), dtype=np.complex128)
+            sample_rate_hz = float(self._driver.get_sample_rate())
             timestamp = time.time_ns()
 
-        if data.size == 0:
-            return None
+            if data.size == 0:
+                return None
 
-        complex_values = np.asarray(data)
-        timestamps = [timestamp + i * 1_000_000 for i in range(len(complex_values))]
+            timestamps = self._iq_timestamps(timestamp, sample_rate_hz, len(data))
+
+        complex_values = data
         return Measurement(
             channel_data={
                 f"{self.name}.i": [float(np.real(v)) for v in complex_values],

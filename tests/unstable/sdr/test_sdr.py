@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -160,3 +162,89 @@ def test_07_instro_sdr_setters_publish_a_command(setter_name: str, value: float,
     assert isinstance(command, Command)
     assert published == [command]
     assert command.channel_data == {f"rtl.{descriptor}.cmd": value}
+
+
+def test_08_measure_iq_spaces_timestamps_at_the_device_sample_period() -> None:
+    """Regression: spacing was hardcoded to 1 ms (1 kSa/s) regardless of the real sample rate."""
+    driver = _MinimalSDRDriver()
+    driver.set_sample_rate(2_400_000.0)
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    measurement = sdr.measure_iq(n_samples=64)
+
+    # 416.667 ns does not fit in whole ns, so spacing dithers between the two neighbours.
+    period_ns = 1e9 / 2_400_000.0
+    spacings = {b - a for a, b in zip(measurement.timestamps, measurement.timestamps[1:])}
+    assert spacings <= {416, 417}
+    assert 1_000_000 not in spacings
+    assert measurement.timestamps[-1] - measurement.timestamps[0] == pytest.approx(63 * period_ns, abs=1)
+
+    # The read returns after the samples were taken, so the block ends at "now", not starts there.
+    assert measurement.timestamps[-1] <= time.time_ns()
+
+
+def test_09_measure_iq_blocks_never_overlap_in_time() -> None:
+    """Regression: every block re-anchored to the wall clock, so rapid blocks overlapped."""
+    driver = _MinimalSDRDriver()
+    driver.set_sample_rate(2_400_000.0)
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    first = sdr.measure_iq(n_samples=4096)
+    second = sdr.measure_iq(n_samples=4096)
+
+    assert second.timestamps[0] > first.timestamps[-1]
+
+
+def test_10_measure_iq_re_anchors_after_a_real_gap() -> None:
+    """A dropout longer than one block stays visible as a gap instead of being papered over."""
+    driver = _MinimalSDRDriver()
+    driver.set_sample_rate(2_400_000.0)
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    first = sdr.measure_iq(n_samples=8)
+    dt = round(1e9 / 2_400_000.0)
+    time.sleep(0.01)
+    second = sdr.measure_iq(n_samples=8)
+
+    assert second.timestamps[0] - first.timestamps[-1] > dt
+
+
+def test_11_measure_iq_rejects_a_non_positive_sample_rate() -> None:
+    """A driver that cannot report its rate must fail loudly rather than fabricate a timebase."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.get_sample_rate.return_value = 0.0
+    driver.read_iq.return_value = np.array([1 + 2j], dtype=np.complex128)
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    with pytest.raises(ValueError, match="non-positive sample rate"):
+        sdr.measure_iq(n_samples=1)
+
+
+def test_12_measure_iq_timestamps_track_the_exact_sample_period() -> None:
+    """Regression: a period rounded to whole ns drifts 800 ppm at RTL-SDR rates."""
+    rate, n_samples = 2_400_000.0, 100_000
+    driver = _MinimalSDRDriver()
+    driver.set_sample_rate(rate)
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    measurement = sdr.measure_iq(n_samples=n_samples)
+
+    period_ns = 1e9 / rate
+    t0 = measurement.timestamps[0]
+    worst_ns = max(abs((t - t0) - i * period_ns) for i, t in enumerate(measurement.timestamps))
+    assert worst_ns <= 1.0  # rounding a 417 ns period instead would drift ~33 us over this block
+
+
+def test_13_measure_iq_warns_once_on_a_sub_nanosecond_sample_period(caplog) -> None:
+    """Above 1 GSa/s integer-ns timestamps collapse samples onto duplicates; warn, don't fail."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.get_sample_rate.return_value = 2e9
+    driver.read_iq.return_value = np.zeros(8, dtype=np.complex128)
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    with caplog.at_level(logging.WARNING, logger="instro.unstable.sdr.sdr"):
+        measurement = sdr.measure_iq(n_samples=8)
+        sdr.measure_iq(n_samples=8)
+
+    assert len(measurement.channel_data["rtl.i"]) == 8
+    assert len([r for r in caplog.records if "1 GSa/s" in r.getMessage()]) == 1
