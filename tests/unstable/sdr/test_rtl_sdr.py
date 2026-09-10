@@ -115,9 +115,43 @@ def test_08_rtlsdr_raises_a_clear_error_when_not_open() -> None:
     driver = RTLSDR(device_index=0)
 
     with pytest.raises(RuntimeError, match="not open"):
-        driver.read_iq(16)
+        driver.read_iq(1024)
     with pytest.raises(RuntimeError, match="not open"):
         driver.get_center_freq()
+
+
+@pytest.mark.parametrize("n_samples", [1000, 257, 0, -256])
+def test_11_read_iq_rejects_sample_counts_librtlsdr_cannot_transfer(n_samples: int) -> None:
+    """A short read makes pyrtlsdr close the device, after which the next call segfaults."""
+    patcher, _, device = _patch_rtlsdr()
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.open()
+
+        with pytest.raises(ValueError, match="multiple of 256"):
+            driver.read_iq(n_samples)
+        device.read_samples.assert_not_called()
+    finally:
+        patcher.stop()
+
+
+def test_12_driver_notices_the_vendor_closing_the_handle() -> None:
+    """Regression: pyrtlsdr closes on a transport error, leaving a stale handle we then dereference."""
+    patcher, _, device = _patch_rtlsdr()
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.open()
+        device.device_opened = False  # what pyrtlsdr does to itself on a failed read
+
+        with pytest.raises(RuntimeError, match="not open"):
+            driver.read_iq(1024)
+        device.read_samples.assert_not_called()
+
+        device.device_opened = True  # a fresh handle from a real reopen
+        driver.open()  # the stale handle was dropped, so the driver can recover
+        assert driver.read_iq(1024) is not None
+    finally:
+        patcher.stop()
 
 
 def test_09_driver_imports_without_the_vendor_sdk_installed() -> None:
