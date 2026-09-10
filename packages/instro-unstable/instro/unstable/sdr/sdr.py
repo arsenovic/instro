@@ -29,6 +29,16 @@ from instro.lib.instrument import publish_command, publish_measurement
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True, eq=False)
+class IQCapture:
+    """One block of IQ samples with the timebase and tuner state they were taken under."""
+
+    samples: np.ndarray
+    sample_period_ns: float
+    center_freq_hz: float
+    t0_ns: int | None = None
+
+
 class SDRDriverBase(abc.ABC):
     """Vendor SDR driver contract. Concrete drivers own their transport and lifecycle."""
 
@@ -83,19 +93,9 @@ class SDRDriverBase(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def read_iq(self, n_samples: int) -> np.ndarray:
-        """Read a block of complex IQ samples."""
+    def read_iq(self, n_samples: int) -> IQCapture:
+        """Read a block of complex IQ samples together with the timebase they were taken on."""
         raise NotImplementedError
-
-
-@dataclass(frozen=True, eq=False)
-class IQBlock:
-    """One acquisition: samples plus the device state they were taken under."""
-
-    samples: np.ndarray
-    timestamps: list[int]
-    sample_rate_hz: float
-    center_freq_hz: float
 
 
 class InstroSDR(Instrument):
@@ -122,46 +122,46 @@ class InstroSDR(Instrument):
         """Return the underlying hardware driver."""
         return self._driver
 
-    def _iq_timestamps(self, t_read_ns: int, sample_rate_hz: float, length: int) -> list[int]:
-        """Nanosecond timestamps for one IQ block, spaced at the device's actual sample period."""
-        if sample_rate_hz <= 0:
-            raise ValueError(f"driver reported a non-positive sample rate: {sample_rate_hz}")
-        if sample_rate_hz > 1e9 and not self._sample_period_warning_issued:
+    def _iq_timestamps(self, capture: IQCapture, t_read_ns: int) -> list[int]:
+        """Nanosecond timestamps for one capture, spaced at the sample period the device reported."""
+        period_ns = capture.sample_period_ns
+        if period_ns <= 0:
+            raise ValueError(f"driver reported a non-positive sample period: {period_ns}")
+        if period_ns < 1.0 and not self._sample_period_warning_issued:
             self._sample_period_warning_issued = True
             logger.warning(
-                "Sample rate %s Sa/s is faster than the 1 GSa/s that integer-nanosecond timestamps "
-                "can resolve; samples in each block will share timestamps.",
-                sample_rate_hz,
+                "Sample period %s ns is shorter than the integer nanosecond timestamps can resolve; "
+                "samples in each block will share timestamps.",
+                period_ns,
             )
 
-        period_ns = 1e9 / sample_rate_hz
-        offsets = np.round(np.arange(length) * period_ns).astype(np.int64)
+        # Round per index, not a pre-rounded period: 417 ns for 416.667 is 800 ppm of drift.
+        offsets = np.round(np.arange(len(capture.samples)) * period_ns).astype(np.int64)
 
-        t0 = t_read_ns - int(offsets[-1])
-        if self._last_iq_timestamp is not None and t0 <= self._last_iq_timestamp:
-            t0 = self._last_iq_timestamp + round(period_ns)
+        if capture.t0_ns is not None:
+            t0 = capture.t0_ns
+        else:
+            # Backstamp: the read returned after the samples were taken. Buffered samples
+            # continue the previous timeline; a wider gap is a real dropout.
+            t0 = t_read_ns - int(offsets[-1])
+            if self._last_iq_timestamp is not None and t0 <= self._last_iq_timestamp:
+                t0 = self._last_iq_timestamp + round(period_ns)
 
         timestamps: list[int] = (t0 + offsets).tolist()
         self._last_iq_timestamp = timestamps[-1]
         return timestamps
 
-    def _read_iq_block(self, n_samples: int) -> IQBlock | None:
-        """Acquire one IQ block with the device state it was taken under. Publishes nothing."""
+    def _read_iq_block(self, n_samples: int) -> tuple[IQCapture, list[int]] | None:
+        """Acquire one capture and resolve its timestamps. Publishes nothing."""
         if n_samples <= 0:
             raise ValueError(f"n_samples must be positive, got {n_samples}")
 
         with self._resource_lock:
-            data = np.asarray(self._driver.read_iq(n_samples), dtype=np.complex128)
-            sample_rate_hz = float(self._driver.get_sample_rate())
-            center_freq_hz = float(self._driver.get_center_freq())
-            timestamp = time.time_ns()
-
-            if data.size == 0:
+            capture = self._driver.read_iq(n_samples)
+            t_read_ns = time.time_ns()
+            if capture.samples.size == 0:
                 return None
-
-            timestamps = self._iq_timestamps(timestamp, sample_rate_hz, len(data))
-
-        return IQBlock(data, timestamps, sample_rate_hz, center_freq_hz)
+            return capture, self._iq_timestamps(capture, t_read_ns)
 
     @publish_measurement
     def measure_iq(self, n_samples: int = 1024, **kwargs: Any) -> Measurement | None:
@@ -174,24 +174,26 @@ class InstroSDR(Instrument):
         block = self._read_iq_block(n_samples)
         if block is None:
             return None
+        capture, timestamps = block
 
         return Measurement(
             channel_data={
-                f"{self.name}.i": block.samples.real.tolist(),
-                f"{self.name}.q": block.samples.imag.tolist(),
+                f"{self.name}.i": capture.samples.real.tolist(),
+                f"{self.name}.q": capture.samples.imag.tolist(),
             },
-            timestamps=block.timestamps,
+            timestamps=timestamps,
             tags={**self.default_tags, **kwargs},
         )
 
     @staticmethod
-    def _psd_from_block(block: IQBlock) -> tuple[np.ndarray, np.ndarray]:
-        """Hann-windowed power spectral density for one block: absolute frequencies and linear PSD."""
-        window = np.hanning(len(block.samples))
-        spectrum = np.fft.fftshift(np.fft.fft(block.samples * window))
-        psd = np.abs(spectrum) ** 2 / (block.sample_rate_hz * np.sum(window**2))
-        freqs = np.fft.fftshift(np.fft.fftfreq(len(block.samples), d=1.0 / block.sample_rate_hz))
-        return freqs + block.center_freq_hz, psd
+    def _psd_from_capture(capture: IQCapture) -> tuple[np.ndarray, np.ndarray]:
+        """Hann-windowed power spectral density: absolute frequencies and linear PSD."""
+        sample_rate_hz = 1e9 / capture.sample_period_ns
+        window = np.hanning(len(capture.samples))
+        spectrum = np.fft.fftshift(np.fft.fft(capture.samples * window))
+        psd = np.abs(spectrum) ** 2 / (sample_rate_hz * np.sum(window**2))
+        freqs = np.fft.fftshift(np.fft.fftfreq(len(capture.samples), d=1.0 / sample_rate_hz))
+        return freqs + capture.center_freq_hz, psd
 
     @staticmethod
     def _occupied_bandwidth(freqs: np.ndarray, psd: np.ndarray, fraction: float = 0.99) -> float:
@@ -210,7 +212,7 @@ class InstroSDR(Instrument):
         block = self._read_iq_block(n_samples)
         if block is None:
             return None
-        freqs, psd = self._psd_from_block(block)
+        freqs, psd = self._psd_from_capture(block[0])
         return freqs, 10.0 * np.log10(np.maximum(psd, np.finfo(float).tiny))
 
     @publish_measurement
@@ -219,8 +221,9 @@ class InstroSDR(Instrument):
         block = self._read_iq_block(n_samples)
         if block is None:
             return None
+        capture, timestamps = block
 
-        freqs, psd = self._psd_from_block(block)
+        freqs, psd = self._psd_from_capture(capture)
         floor = np.finfo(float).tiny
         peak = int(np.argmax(psd))
 
@@ -231,7 +234,7 @@ class InstroSDR(Instrument):
                 f"{self.name}.spectrum.mean_power_db": [float(10.0 * np.log10(max(psd.mean(), floor)))],
                 f"{self.name}.spectrum.occupied_bw_hz": [self._occupied_bandwidth(freqs, psd)],
             },
-            timestamps=[block.timestamps[-1]],
+            timestamps=[timestamps[-1]],
             tags={**self.default_tags, **kwargs},
         )
 

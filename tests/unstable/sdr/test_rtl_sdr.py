@@ -149,7 +149,7 @@ def test_12_driver_notices_the_vendor_closing_the_handle() -> None:
 
         device.device_opened = True  # a fresh handle from a real reopen
         driver.open()  # the stale handle was dropped, so the driver can recover
-        assert driver.read_iq(1024) is not None
+        assert driver.read_iq(1024).samples is not None
     finally:
         patcher.stop()
 
@@ -180,13 +180,18 @@ def test_10_rtlsdr_reads_iq_from_a_connected_dongle() -> None:
         assert sdr.get_center_freq() == pytest.approx(89_700_000.0, rel=1e-4)
         assert sdr.get_sample_rate() == pytest.approx(2_400_000.0, rel=1e-4)
 
-        samples = sdr.read_iq(4096)
-        assert samples.shape == (4096,)
-        assert np.iscomplexobj(samples)
-        assert np.any(samples != 0)
+        capture = sdr.read_iq(4096)
+        assert capture.samples.shape == (4096,)
+        assert np.iscomplexobj(capture.samples)
+        assert np.any(capture.samples != 0)
+
+        # The dongle has no clock of its own, so it reports a period but no anchor.
+        assert capture.sample_period_ns == pytest.approx(1e9 / 2_400_000.0, rel=1e-4)
+        assert capture.center_freq_hz == pytest.approx(89_700_000.0, rel=1e-4)
+        assert capture.t0_ns is None
 
         sdr.close()
         sdr.open()
-        assert sdr.read_iq(1024).shape == (1024,)
+        assert sdr.read_iq(1024).samples.shape == (1024,)
     finally:
         sdr.close()

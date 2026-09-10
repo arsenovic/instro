@@ -6,9 +6,10 @@ abstract driver contract defines the minimal hardware API, and a higher-level
 shared ``Measurement``/``Command`` objects from the core library.
 """
 
-from instro.unstable.sdr.sdr import InstroSDR, SDRDriverBase
+from instro.unstable.sdr.sdr import InstroSDR, IQCapture, SDRDriverBase
 
 __all__ = [
+    "IQCapture",
     "InstroSDR",
     "SDRDriverBase",
 ]

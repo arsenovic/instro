@@ -231,13 +231,34 @@ Every method is currently required:
 | `get_gain` | `() -> float` | Read gain |
 | `set_bandwidth` | `(bandwidth_hz: float) -> None` | Set IF/filter bandwidth |
 | `get_bandwidth` | `() -> float` | Read bandwidth |
-| `read_iq` | `(n_samples: int) -> np.ndarray` | Return a complex IQ block |
+| `read_iq` | `(n_samples: int) -> IQCapture` | Return a complex IQ block with its timebase |
+
+### IQCapture
+
+`read_iq` returns an `IQCapture` rather than a bare array, so the timebase travels with the
+samples it describes:
+
+| Field | Type | Description |
+|---|---|---|
+| `samples` | `np.ndarray` | Complex IQ samples |
+| `sample_period_ns` | `float` | Seconds per sample times 1e9, as the device reports it |
+| `center_freq_hz` | `float` | Tuned frequency these samples were captured at |
+| `t0_ns` | `int \| None` | Hardware timestamp of the first sample; `None` if the device has no clock |
+
+Reporting `center_freq_hz` from the same device snapshot as the samples is what lets the
+spectrum carry a real frequency axis. Querying it separately would let a retune slip in
+between and mislabel the result.
 
 <Warning>
-`get_sample_rate` must report the rate the hardware is actually running at, not the value
-last requested. `InstroSDR` derives every IQ timestamp from it, so a stale or nominal value
-mislabels the timebase of everything the driver produces.
+`sample_period_ns` must describe the block being returned, not the rate last requested. A
+tuner quantizes what it was asked for, and `InstroSDR` derives every IQ timestamp from this
+field, so a nominal value mislabels the timebase of everything the driver produces.
 </Warning>
+
+Set `t0_ns` when the hardware timestamps its own samples (UHD's `TimeSpec`, NI-RFSA's
+`absolute_initial_x`). `InstroSDR` then places the block exactly where the device says.
+Leave it `None` and the host anchors the block instead, backstamping it to end when the read
+returned. An RTL-SDR has no such clock, so its driver leaves it unset.
 
 ## Implementation Example: RTLSDR Driver
 
@@ -246,7 +267,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 
-from instro.unstable.sdr.sdr import SDRDriverBase
+from instro.unstable.sdr.sdr import IQCapture, SDRDriverBase
 
 
 class RTLSDR(SDRDriverBase):
@@ -278,10 +299,16 @@ class RTLSDR(SDRDriverBase):
 
     # ... remaining accessors follow the same shape ...
 
-    def read_iq(self, n_samples: int) -> np.ndarray:
+    def read_iq(self, n_samples: int) -> IQCapture:
         if n_samples <= 0 or n_samples % self.READ_GRANULARITY:
             raise ValueError(f"n_samples must be a positive multiple of {self.READ_GRANULARITY}")
-        return np.asarray(self._require_device().read_samples(n_samples), dtype=np.complex128)
+        device = self._require_device()
+        samples = np.asarray(device.read_samples(n_samples), dtype=np.complex128)
+        return IQCapture(
+            samples=samples,
+            sample_period_ns=1e9 / float(device.sample_rate),
+            center_freq_hz=float(device.center_freq),
+        )
 
     def _require_device(self) -> Any:
         if self._device is None:
