@@ -284,8 +284,3 @@ class InstroSDR(Instrument):
     def get_bandwidth(self, **kwargs: Any) -> Measurement:
         """Query the current IF or filter bandwidth in Hz."""
         return self._execute_measurement(self._driver.get_bandwidth, "bandwidth", **kwargs)
-
-    def __getattr__(self, name: str):
-        """Delegate unknown attributes to the underlying driver."""
-        attr = getattr(self._driver, name)
-        return attr
