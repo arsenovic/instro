@@ -18,6 +18,7 @@ import abc
 import logging
 import threading
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable
@@ -33,25 +34,60 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, eq=False)
 class IQCapture:
-    """One block of IQ samples with the timebase and tuner state they were taken under."""
+    """One time-aligned block of IQ samples across one or more channels of a signal path."""
 
     samples: np.ndarray
     sample_period_ns: float
-    center_freq_hz: float
+    channels: tuple[str, ...]
+    center_freq_hz: tuple[float, ...]
     t0_ns: int | None = None
+    # How many samples went missing before this block; the stream could not keep up.
+    dropped_samples: int = 0
+
+    def __post_init__(self) -> None:
+        """Reject rows that do not line up with the channels describing them."""
+        if self.samples.ndim != 2:
+            raise ValueError(f"samples must be 2-D (n_channels, n_samples), got shape {self.samples.shape}")
+        if len(self.channels) != self.samples.shape[0] or len(self.center_freq_hz) != self.samples.shape[0]:
+            raise ValueError(
+                f"{self.samples.shape[0]} sample rows but {len(self.channels)} channels "
+                f"and {len(self.center_freq_hz)} centre frequencies"
+            )
+
+    @property
+    def overflow(self) -> bool:
+        """Whether any samples were dropped before this block."""
+        return self.dropped_samples > 0
+
+    def samples_for(self, channel: str) -> np.ndarray:
+        """Row of samples belonging to ``channel``."""
+        return self.samples[self.channels.index(channel)]
+
+    def center_freq_for(self, channel: str) -> float:
+        """Frequency ``channel`` was tuned to when these samples were taken."""
+        return self.center_freq_hz[self.channels.index(channel)]
+
+    def select(self, channels: Sequence[str]) -> "IQCapture":
+        """Narrow this capture to ``channels``, keeping the shared timebase."""
+        wanted = tuple(channels)
+        if wanted == self.channels:
+            return self
+        missing = [c for c in wanted if c not in self.channels]
+        if missing:
+            raise ValueError(f"capture holds channels {self.channels!r}, asked for {missing!r}")
+        rows = [self.channels.index(c) for c in wanted]
+        return IQCapture(
+            samples=self.samples[rows],
+            sample_period_ns=self.sample_period_ns,
+            channels=wanted,
+            center_freq_hz=tuple(self.center_freq_hz[r] for r in rows),
+            t0_ns=self.t0_ns,
+            dropped_samples=self.dropped_samples,
+        )
 
 
 class SDRDriverBase(abc.ABC):
-    """Vendor SDR driver contract.
-
-    Required methods are abstract: every radio can tune, set a rate, and hand back
-    samples. Everything else raises ``NotImplementedError`` by default, and a driver
-    overrides only what its hardware actually supports.
-
-    ``direction`` and ``channel`` address one signal path. A receive-only, single-path
-    radio accepts the defaults and rejects anything else; drivers validate their own
-    arguments rather than relying on a shared helper.
-    """
+    """Vendor SDR driver contract."""
 
     # --- Required ---
 
@@ -88,8 +124,10 @@ class SDRDriverBase(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def read_iq(self, n_samples: int, *, direction: Direction = Direction.RX, channel: str = "0") -> IQCapture:
-        """Read a block of complex IQ samples together with the timebase they were taken on."""
+    def read_iq(
+        self, n_samples: int, *, direction: Direction = Direction.RX, channels: Sequence[str] = ("0",)
+    ) -> IQCapture:
+        """Read one time-aligned block across ``channels``, with the timebase it was taken on."""
         raise NotImplementedError
 
     # --- Optional: gain ---
@@ -144,6 +182,34 @@ class SDRDriverBase(abc.ABC):
         """Name of the selected antenna port."""
         raise NotImplementedError("Antenna selection has not been implemented for this driver")
 
+    # --- Optional: streaming ---
+
+    def start(self, *, direction: Direction = Direction.RX, channels: Sequence[str] = ("0",)) -> None:
+        """Begin continuous acquisition across ``channels`` so ``fetch_iq`` returns contiguous blocks.
+
+        One stream covers one direction and the whole channel set, which is how SoapySDR's
+        ``setupStream`` and UHD's stream args are shaped. Transmit is always a separate
+        stream from receive.
+        """
+        raise NotImplementedError("Streaming has not been implemented for this driver")
+
+    def stop(self, *, direction: Direction = Direction.RX) -> None:
+        """End this direction's stream and release its buffers."""
+        raise NotImplementedError("Streaming has not been implemented for this driver")
+
+    def fetch_iq(self, n_samples: int, *, direction: Direction = Direction.RX) -> IQCapture:
+        """Block until ``n_samples`` are available on the running stream, then return them.
+
+        Covers every channel the stream was started with. Unlike ``read_iq``, consecutive
+        fetches are contiguous: nothing is lost between them. Set ``overflow`` on the
+        capture when the device dropped samples first.
+        """
+        raise NotImplementedError("Streaming has not been implemented for this driver")
+
+    def get_backlog(self, *, direction: Direction = Direction.RX) -> int:
+        """Samples per channel already captured and waiting to be fetched."""
+        raise NotImplementedError("Streaming has not been implemented for this driver")
+
     # --- Optional: capability discovery ---
 
     def get_num_channels(self, direction: Direction = Direction.RX) -> int:
@@ -165,9 +231,10 @@ class InstroSDR(Instrument):
     def __init__(self, name: str, driver: SDRDriverBase, **kwargs: Any):
         super().__init__(name, **kwargs)
         self._driver = driver
-        self._resource_lock = threading.Lock()
+        self._resource_lock = threading.RLock()
         self._last_iq_timestamp: int | None = None
         self._sample_period_warning_issued = False
+        self._streams: dict[Direction, tuple[str, ...]] = {}
 
     def open(self) -> None:
         """Open the underlying driver."""
@@ -197,67 +264,171 @@ class InstroSDR(Instrument):
             )
 
         # Round per index, not a pre-rounded period: 417 ns for 416.667 is 800 ppm of drift.
-        offsets = np.round(np.arange(len(capture.samples)) * period_ns).astype(np.int64)
+        offsets = np.round(np.arange(capture.samples.shape[1]) * period_ns).astype(np.int64)
 
         if capture.t0_ns is not None:
             t0 = capture.t0_ns
         else:
             # Backstamp: the read returned after the samples were taken. Buffered samples
-            # continue the previous timeline; a wider gap is a real dropout.
+            # continue the previous timeline
             t0 = t_read_ns - int(offsets[-1])
             if self._last_iq_timestamp is not None and t0 <= self._last_iq_timestamp:
-                t0 = self._last_iq_timestamp + round(period_ns)
+                # Buffered samples continue the previous timeline, offset by whatever the
+                # stream dropped, so a dropout is a gap of its true width rather than hidden.
+                t0 = self._last_iq_timestamp + round((capture.dropped_samples + 1) * period_ns)
 
         timestamps: list[int] = (t0 + offsets).tolist()
         self._last_iq_timestamp = timestamps[-1]
         return timestamps
 
-    def _read_iq_block(self, n_samples: int, direction: Direction, channel: str) -> tuple[IQCapture, list[int]] | None:
-        """Acquire one capture and resolve its timestamps. Publishes nothing."""
+    def _iq_channel_data(self, capture: IQCapture, direction: Direction) -> dict[str, list[float]]:
+        """Paired ``.i``/``.q`` channels for every row of a capture."""
+        data: dict[str, list[float]] = {}
+        for row, channel in enumerate(capture.channels):
+            path = self._path(direction, channel)
+            data[f"{self.name}.{path}.i"] = capture.samples[row].real.tolist()
+            data[f"{self.name}.{path}.q"] = capture.samples[row].imag.tolist()
+        return data
+
+    def _report_stream_health(self, capture: IQCapture, backlog: int, direction: Direction, timestamp: int) -> None:
+        """Publish backlog and overflow for a block that came off a stream."""
+        if capture.overflow:
+            logger.warning("SDR '%s' dropped samples on %s before this block", self.name, direction.value)
+        self._publish_stream_health(backlog, capture.overflow, self._path(direction, capture.channels[0]), timestamp)
+
+    def _read_iq_block(
+        self, n_samples: int, direction: Direction, channels: Sequence[str]
+    ) -> tuple[IQCapture, list[int]] | None:
+        """Acquire one capture and resolve its timestamps. Publishes stream health when routed."""
         if n_samples <= 0:
             raise ValueError(f"n_samples must be positive, got {n_samples}")
 
+        backlog: int | None = None
         with self._resource_lock:
-            capture = self._driver.read_iq(n_samples, direction=direction, channel=channel)
+            if direction in self._streams:
+                # Reading the device directly here would race the stream's own reader, so the
+                # block comes off the stream and stays contiguous with surrounding fetches.
+                capture = self._driver.fetch_iq(n_samples, direction=direction).select(channels)
+                backlog = self._driver.get_backlog(direction=direction)
+            else:
+                capture = self._driver.read_iq(n_samples, direction=direction, channels=tuple(channels))
             t_read_ns = time.time_ns()
             if capture.samples.size == 0:
                 return None
-            return capture, self._iq_timestamps(capture, t_read_ns)
+            timestamps = self._iq_timestamps(capture, t_read_ns)
+
+        # A read that consumed from a stream owes the same health report a fetch gives.
+        if backlog is not None:
+            self._report_stream_health(capture, backlog, direction, timestamps[-1])
+        return capture, timestamps
 
     @publish_measurement
     def measure_iq(
-        self, n_samples: int = 1024, *, direction: Direction = Direction.RX, channel: str = "0", **kwargs: Any
+        self,
+        n_samples: int = 1024,
+        *,
+        direction: Direction = Direction.RX,
+        channels: Sequence[str] = ("0",),
+        **kwargs: Any,
     ) -> Measurement | None:
-        """Return a ``Measurement`` containing one IQ buffer block.
+        """Return one time-aligned IQ block across ``channels`` as paired ``.i``/``.q`` channels.
 
-        The measurement contains real and imaginary channels as arrays with a common
-        timestamp vector. This keeps the payload structured and efficient while
-        avoiding one published object per individual sample.
+        Every channel shares one timestamp vector, so a multi-channel radio's rows stay
+        aligned in the published data.
         """
-        block = self._read_iq_block(n_samples, direction, channel)
+        block = self._read_iq_block(n_samples, direction, channels)
         if block is None:
             return None
         capture, timestamps = block
-        path = self._path(direction, channel)
 
         return Measurement(
-            channel_data={
-                f"{self.name}.{path}.i": capture.samples.real.tolist(),
-                f"{self.name}.{path}.q": capture.samples.imag.tolist(),
-            },
+            channel_data=dict(self._iq_channel_data(capture, direction)),
             timestamps=timestamps,
             tags={**self.default_tags, **kwargs},
         )
 
+    def start(
+        self,
+        *,
+        direction: Direction = Direction.RX,
+        channels: Sequence[str] = ("0",),
+        background: bool = False,
+    ) -> None:
+        """Begin continuous acquisition across ``channels``, optionally spinning the daemon too."""
+        with self._resource_lock:
+            self._driver.start(direction=direction, channels=tuple(channels))
+        self._streams[direction] = tuple(channels)
+        if background:
+            super().start()
+
+    def stop(self, **kwargs: Any) -> None:
+        """Stop the background daemon and every running hardware stream."""
+        super().stop()
+        for direction in tuple(self._streams):
+            del self._streams[direction]
+            with self._resource_lock:
+                self._driver.stop(direction=direction)
+
+    @publish_measurement
+    def _publish_stream_health(self, backlog: int, overflow: bool, path: str, timestamp: int) -> Measurement:
+        """Publish buffer depth and dropped-sample state for one fetch."""
+        return Measurement(
+            channel_data={
+                f"{self.name}.{path}.backlog": [float(backlog)],
+                f"{self.name}.{path}.overflow": [float(overflow)],
+            },
+            timestamps=[timestamp],
+            tags={**self.default_tags},
+        )
+
+    @publish_measurement
+    def fetch_iq(
+        self, n_samples: int = 1024, *, direction: Direction = Direction.RX, **kwargs: Any
+    ) -> Measurement | None:
+        """Return the next contiguous block from the running stream on ``direction``.
+
+        Covers every channel the stream was started with. Unlike ``measure_iq``, nothing is
+        lost between consecutive calls unless the device reports an overflow, which
+        publishes on the ``overflow`` channel.
+        """
+        if n_samples <= 0:
+            raise ValueError(f"n_samples must be positive, got {n_samples}")
+
+        with self._resource_lock:
+            capture = self._driver.fetch_iq(n_samples, direction=direction)
+            t_read_ns = time.time_ns()
+            if capture.samples.size == 0:
+                return None
+            timestamps = self._iq_timestamps(capture, t_read_ns)
+            backlog = self._driver.get_backlog(direction=direction)
+
+        self._report_stream_health(capture, backlog, direction, timestamps[-1])
+
+        return Measurement(
+            channel_data=dict(self._iq_channel_data(capture, direction)),
+            timestamps=timestamps,
+            tags={**self.default_tags, **kwargs},
+        )
+
+    def get_backlog(self, *, direction: Direction = Direction.RX) -> int:
+        """Samples per channel waiting on the running stream."""
+        with self._resource_lock:
+            return self._driver.get_backlog(direction=direction)
+
+    def is_streaming(self, *, direction: Direction = Direction.RX) -> bool:
+        """Whether a stream is running on ``direction``."""
+        return direction in self._streams
+
     @staticmethod
-    def _psd_from_capture(capture: IQCapture) -> tuple[np.ndarray, np.ndarray]:
-        """Hann-windowed power spectral density: absolute frequencies and linear PSD."""
+    def _psd_from_capture(capture: IQCapture, channel: str) -> tuple[np.ndarray, np.ndarray]:
+        """Hann-windowed PSD for one channel of a capture: absolute frequencies and linear PSD."""
+        samples = capture.samples_for(channel)
         sample_rate_hz = 1e9 / capture.sample_period_ns
-        window = np.hanning(len(capture.samples))
-        spectrum = np.fft.fftshift(np.fft.fft(capture.samples * window))
+        window = np.hanning(len(samples))
+        spectrum = np.fft.fftshift(np.fft.fft(samples * window))
         psd = np.abs(spectrum) ** 2 / (sample_rate_hz * np.sum(window**2))
-        freqs = np.fft.fftshift(np.fft.fftfreq(len(capture.samples), d=1.0 / sample_rate_hz))
-        return freqs + capture.center_freq_hz, psd
+        freqs = np.fft.fftshift(np.fft.fftfreq(len(samples), d=1.0 / sample_rate_hz))
+        return freqs + capture.center_freq_for(channel), psd
 
     @staticmethod
     def _occupied_bandwidth(freqs: np.ndarray, psd: np.ndarray, fraction: float = 0.99) -> float:
@@ -274,35 +445,41 @@ class InstroSDR(Instrument):
     def compute_psd(
         self, n_samples: int = 1024, *, direction: Direction = Direction.RX, channel: str = "0"
     ) -> tuple[np.ndarray, np.ndarray] | None:
-        """Acquire a block and return its ``(frequencies_hz, power_db)`` spectrum. Publishes nothing."""
-        block = self._read_iq_block(n_samples, direction, channel)
+        """Acquire a block and return one channel's ``(frequencies_hz, power_db)``. Publishes nothing."""
+        block = self._read_iq_block(n_samples, direction, (channel,))
         if block is None:
             return None
-        freqs, psd = self._psd_from_capture(block[0])
+        freqs, psd = self._psd_from_capture(block[0], channel)
         return freqs, 10.0 * np.log10(np.maximum(psd, np.finfo(float).tiny))
 
     @publish_measurement
     def measure_spectrum(
-        self, n_samples: int = 1024, *, direction: Direction = Direction.RX, channel: str = "0", **kwargs: Any
+        self,
+        n_samples: int = 1024,
+        *,
+        direction: Direction = Direction.RX,
+        channels: Sequence[str] = ("0",),
+        **kwargs: Any,
     ) -> Measurement | None:
-        """Publish scalar features of the block's power spectrum; use ``compute_psd`` for the array."""
-        block = self._read_iq_block(n_samples, direction, channel)
+        """Publish scalar spectrum features per channel; use ``compute_psd`` for the array."""
+        block = self._read_iq_block(n_samples, direction, channels)
         if block is None:
             return None
         capture, timestamps = block
-        path = self._path(direction, channel)
-
-        freqs, psd = self._psd_from_capture(capture)
         floor = np.finfo(float).tiny
-        peak = int(np.argmax(psd))
+
+        channel_data: dict[str, list[float] | list[str]] = {}
+        for channel in capture.channels:
+            freqs, psd = self._psd_from_capture(capture, channel)
+            peak = int(np.argmax(psd))
+            path = f"{self.name}.{self._path(direction, channel)}.spectrum"
+            channel_data[f"{path}.peak_power_db"] = [float(10.0 * np.log10(max(psd[peak], floor)))]
+            channel_data[f"{path}.peak_freq_hz"] = [float(freqs[peak])]
+            channel_data[f"{path}.mean_power_db"] = [float(10.0 * np.log10(max(psd.mean(), floor)))]
+            channel_data[f"{path}.occupied_bw_hz"] = [self._occupied_bandwidth(freqs, psd)]
 
         return Measurement(
-            channel_data={
-                f"{self.name}.{path}.spectrum.peak_power_db": [float(10.0 * np.log10(max(psd[peak], floor)))],
-                f"{self.name}.{path}.spectrum.peak_freq_hz": [float(freqs[peak])],
-                f"{self.name}.{path}.spectrum.mean_power_db": [float(10.0 * np.log10(max(psd.mean(), floor)))],
-                f"{self.name}.{path}.spectrum.occupied_bw_hz": [self._occupied_bandwidth(freqs, psd)],
-            },
+            channel_data=channel_data,
             timestamps=[timestamps[-1]],
             tags={**self.default_tags, **kwargs},
         )

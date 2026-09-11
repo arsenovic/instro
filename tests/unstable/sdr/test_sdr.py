@@ -55,9 +55,10 @@ class _MinimalSDRDriver(SDRDriverBase):
         base = np.linspace(0, 1, n_samples, dtype=float)
         samples = base.astype(np.complex128) + 1j * (base * 2.0)
         return IQCapture(
-            samples=samples,
+            samples=samples.reshape(1, -1),
             sample_period_ns=1e9 / self._sample_rate_hz,
-            center_freq_hz=self._center_freq_hz,
+            channels=("0",),
+            center_freq_hz=(self._center_freq_hz,),
         )
 
 
@@ -115,9 +116,10 @@ def test_04_instro_sdr_safely_wraps_driver_methods() -> None:
     driver = MagicMock(spec=_MinimalSDRDriver)
     driver.get_sample_rate.return_value = 2_400_000.0
     driver.read_iq.return_value = IQCapture(
-        samples=np.array([1 + 2j, 3 + 4j], dtype=np.complex128),
+        samples=np.array([[1 + 2j, 3 + 4j]], dtype=np.complex128),
         sample_period_ns=1e9 / 2_400_000.0,
-        center_freq_hz=100_000_000.0,
+        channels=("0",),
+        center_freq_hz=(100_000_000.0,),
     )
     sdr = InstroSDR(name="rtl", driver=driver)
 
@@ -232,7 +234,10 @@ def test_11_measure_iq_rejects_a_non_positive_sample_period() -> None:
     """A driver that cannot report its timebase must fail loudly rather than fabricate one."""
     driver = MagicMock(spec=_MinimalSDRDriver)
     driver.read_iq.return_value = IQCapture(
-        samples=np.array([1 + 2j], dtype=np.complex128), sample_period_ns=0.0, center_freq_hz=1e8
+        samples=np.array([[1 + 2j]], dtype=np.complex128),
+        sample_period_ns=0.0,
+        channels=("0",),
+        center_freq_hz=(1e8,),
     )
     sdr = InstroSDR(name="rtl", driver=driver)
 
@@ -259,7 +264,10 @@ def test_13_measure_iq_warns_once_on_a_sub_nanosecond_sample_period(caplog) -> N
     """A sub-nanosecond period collapses samples onto duplicate timestamps; warn, don't fail."""
     driver = MagicMock(spec=_MinimalSDRDriver)
     driver.read_iq.return_value = IQCapture(
-        samples=np.zeros(8, dtype=np.complex128), sample_period_ns=0.5, center_freq_hz=1e8
+        samples=np.zeros((1, 8), dtype=np.complex128),
+        sample_period_ns=0.5,
+        channels=("0",),
+        center_freq_hz=(1e8,),
     )
     sdr = InstroSDR(name="rtl", driver=driver)
 
@@ -282,9 +290,10 @@ class _ToneSDRDriver(_MinimalSDRDriver):
         n = np.arange(n_samples)
         samples = np.exp(2j * np.pi * self._offset_hz * n / self._sample_rate_hz)
         return IQCapture(
-            samples=samples,
+            samples=samples.reshape(1, -1),
             sample_period_ns=1e9 / self._sample_rate_hz,
-            center_freq_hz=self._center_freq_hz,
+            channels=("0",),
+            center_freq_hz=(self._center_freq_hz,),
         )
 
 
@@ -339,7 +348,7 @@ def test_17_instro_sdr_does_not_delegate_to_the_driver() -> None:
         sdr.read_iq  # noqa: B018 -- the attribute access itself is under test
 
     assert sdr.driver is driver
-    assert sdr.driver.read_iq(4).samples.shape == (4,)
+    assert sdr.driver.read_iq(4).samples.shape == (1, 4)
 
 
 def test_18_measure_iq_values_match_per_element_conversion_exactly() -> None:
@@ -348,7 +357,10 @@ def test_18_measure_iq_values_match_per_element_conversion_exactly() -> None:
     samples = (rng.standard_normal(2048) + 1j * rng.standard_normal(2048)).astype(np.complex128)
     driver = MagicMock(spec=_MinimalSDRDriver)
     driver.read_iq.return_value = IQCapture(
-        samples=samples, sample_period_ns=1e9 / 2_400_000.0, center_freq_hz=100_000_000.0
+        samples=samples.reshape(1, -1),
+        sample_period_ns=1e9 / 2_400_000.0,
+        channels=("0",),
+        center_freq_hz=(100_000_000.0,),
     )
     sdr = InstroSDR(name="rtl", driver=driver)
 
@@ -367,9 +379,10 @@ def test_19_a_hardware_timestamp_anchors_the_block() -> None:
     period_ns = 1e9 / 2_400_000.0
     driver = MagicMock(spec=_MinimalSDRDriver)
     driver.read_iq.return_value = IQCapture(
-        samples=np.zeros(64, dtype=np.complex128),
+        samples=np.zeros((1, 64), dtype=np.complex128),
         sample_period_ns=period_ns,
-        center_freq_hz=100_000_000.0,
+        channels=("0",),
+        center_freq_hz=(100_000_000.0,),
         t0_ns=hardware_t0,
     )
     sdr = InstroSDR(name="rtl", driver=driver)
@@ -387,9 +400,10 @@ def test_20_hardware_timestamps_bypass_the_wall_clock_continuity_guard() -> None
     sdr = InstroSDR(name="rtl", driver=driver)
 
     driver.read_iq.return_value = IQCapture(
-        samples=np.zeros(8, dtype=np.complex128),
+        samples=np.zeros((1, 8), dtype=np.complex128),
         sample_period_ns=period_ns,
-        center_freq_hz=1e8,
+        channels=("0",),
+        center_freq_hz=(1e8,),
         t0_ns=5_000,
     )
     first = sdr.measure_iq(n_samples=8)
@@ -402,9 +416,10 @@ def test_21_measure_iq_takes_the_timebase_from_the_capture_not_a_second_query() 
     """Regression risk: re-querying the rate can disagree with the block that was just read."""
     driver = MagicMock(spec=_MinimalSDRDriver)
     driver.read_iq.return_value = IQCapture(
-        samples=np.zeros(16, dtype=np.complex128),
+        samples=np.zeros((1, 16), dtype=np.complex128),
         sample_period_ns=1e9 / 2_400_000.0,
-        center_freq_hz=100_000_000.0,
+        channels=("0",),
+        center_freq_hz=(100_000_000.0,),
     )
     driver.get_sample_rate.return_value = 999.0  # a stale value the HAL must ignore
     sdr = InstroSDR(name="rtl", driver=driver)
@@ -434,9 +449,10 @@ class _RequiredOnlyDriver(SDRDriverBase):
 
     def read_iq(self, n_samples: int, **kwargs) -> IQCapture:
         return IQCapture(
-            samples=np.zeros(n_samples, dtype=np.complex128),
+            samples=np.zeros((1, n_samples), dtype=np.complex128),
             sample_period_ns=1e9 / 2.4e6,
-            center_freq_hz=1e8,
+            channels=("0",),
+            center_freq_hz=(1e8,),
         )
 
 
@@ -497,3 +513,329 @@ def test_25_published_channels_name_the_signal_path() -> None:
 
     assert set(iq.channel_data) == {"rtl.rx0.i", "rtl.rx0.q"}
     assert set(command.channel_data) == {"rtl.rx0.center_freq.cmd"}
+
+
+def _capture(samples: int = 8, dropped: int = 0, n_channels: int = 1) -> IQCapture:
+    return IQCapture(
+        samples=np.zeros((n_channels, samples), dtype=np.complex128),
+        sample_period_ns=1e9 / 2_400_000.0,
+        channels=tuple(str(i) for i in range(n_channels)),
+        center_freq_hz=(1e8,) * n_channels,
+        dropped_samples=dropped,
+    )
+
+
+def test_26_fetch_iq_publishes_iq_and_stream_health() -> None:
+    """A fetch reports buffer depth alongside the samples, as InstroDAQ does."""
+    published = []
+    publisher = MagicMock()
+    publisher.publish.side_effect = lambda data, **kwargs: published.append(data)
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture()
+    driver.get_backlog.return_value = 4096
+    sdr = InstroSDR(name="rtl", driver=driver, publishers=[publisher])
+
+    measurement = sdr.fetch_iq(n_samples=8)
+
+    assert set(measurement.channel_data) == {"rtl.rx0.i", "rtl.rx0.q"}
+    health = next(d for d in published if "rtl.rx0.backlog" in d.channel_data)
+    assert health.channel_data["rtl.rx0.backlog"] == [4096.0]
+    assert health.channel_data["rtl.rx0.overflow"] == [0.0]
+    assert len(health.timestamps) == 1
+
+
+def test_27_fetch_iq_reports_a_dropped_block(caplog) -> None:
+    """An overflow is published and logged, never swallowed."""
+    published = []
+    publisher = MagicMock()
+    publisher.publish.side_effect = lambda data, **kwargs: published.append(data)
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(dropped=1024)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="rtl", driver=driver, publishers=[publisher])
+
+    with caplog.at_level(logging.WARNING, logger="instro.unstable.sdr.sdr"):
+        sdr.fetch_iq(n_samples=8)
+
+    health = next(d for d in published if "rtl.rx0.overflow" in d.channel_data)
+    assert health.channel_data["rtl.rx0.overflow"] == [1.0]
+    assert any("dropped samples" in r.getMessage() for r in caplog.records)
+
+
+def test_28_fetch_iq_blocks_are_contiguous() -> None:
+    """Consecutive fetches continue one timeline: streaming loses nothing between calls."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(samples=1024)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    first = sdr.fetch_iq(n_samples=1024)
+    second = sdr.fetch_iq(n_samples=1024)
+
+    assert second.timestamps[0] - first.timestamps[-1] == round(1e9 / 2_400_000.0)
+
+
+def test_29_start_and_stop_reach_the_driver() -> None:
+    """The HAL owns the daemon; the driver owns the hardware stream."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    sdr.start(channels=("0",))
+    driver.start.assert_called_once_with(direction=Direction.RX, channels=("0",))
+
+    sdr.stop()
+    driver.stop.assert_called_once_with(direction=Direction.RX)
+
+
+def test_30_stop_without_start_leaves_the_driver_alone() -> None:
+    """close() routes through stop(), so a never-started stream must not be stopped."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    sdr.stop()
+
+    driver.stop.assert_not_called()
+
+
+def test_31_streaming_is_optional_for_a_driver() -> None:
+    """A driver without a stream says so rather than failing obscurely."""
+    sdr = InstroSDR(name="rtl", driver=_RequiredOnlyDriver())
+
+    with pytest.raises(NotImplementedError):
+        sdr.start()
+    with pytest.raises(NotImplementedError):
+        sdr.fetch_iq(n_samples=8)
+
+
+def test_32_iq_capture_rejects_a_mismatched_shape() -> None:
+    """A driver that mislabels its rows must fail at the boundary, not downstream."""
+    with pytest.raises(ValueError, match="must be 2-D"):
+        IQCapture(
+            samples=np.zeros(8, dtype=np.complex128),
+            sample_period_ns=416.0,
+            channels=("0",),
+            center_freq_hz=(1e8,),
+        )
+    with pytest.raises(ValueError, match="2 sample rows but 1 channels"):
+        IQCapture(
+            samples=np.zeros((2, 8), dtype=np.complex128),
+            sample_period_ns=416.0,
+            channels=("0",),
+            center_freq_hz=(1e8,),
+        )
+
+
+def test_33_measure_iq_publishes_every_channel_on_one_timebase() -> None:
+    """MIMO capture exists to be time-aligned, so all rows share one timestamp vector."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.read_iq.return_value = IQCapture(
+        samples=np.array([[1 + 1j, 2 + 2j], [3 + 3j, 4 + 4j]], dtype=np.complex128),
+        sample_period_ns=1e9 / 2_400_000.0,
+        channels=("0", "1"),
+        center_freq_hz=(1e8, 2e8),
+    )
+    sdr = InstroSDR(name="usrp", driver=driver)
+
+    measurement = sdr.measure_iq(n_samples=2, channels=("0", "1"))
+
+    assert set(measurement.channel_data) == {"usrp.rx0.i", "usrp.rx0.q", "usrp.rx1.i", "usrp.rx1.q"}
+    assert measurement.channel_data["usrp.rx0.i"] == [1.0, 2.0]
+    assert measurement.channel_data["usrp.rx1.i"] == [3.0, 4.0]
+    assert len(measurement.timestamps) == 2  # one vector shared by every channel
+    driver.read_iq.assert_called_once_with(2, direction=Direction.RX, channels=("0", "1"))
+
+
+def test_34_spectrum_uses_each_channel_own_centre_frequency() -> None:
+    """Channels of one stream can be tuned independently, as on a USRP or Pluto."""
+    n = 1024
+    rate = 2_400_000.0
+    tone = np.exp(2j * np.pi * 300_000.0 * np.arange(n) / rate)
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.read_iq.return_value = IQCapture(
+        samples=np.stack([tone, tone]),
+        sample_period_ns=1e9 / rate,
+        channels=("0", "1"),
+        center_freq_hz=(100_000_000.0, 200_000_000.0),
+    )
+    sdr = InstroSDR(name="usrp", driver=driver)
+
+    measurement = sdr.measure_spectrum(n_samples=n, channels=("0", "1"))
+
+    bin_hz = rate / n
+    assert measurement.channel_data["usrp.rx0.spectrum.peak_freq_hz"][0] == pytest.approx(100_300_000.0, abs=bin_hz)
+    assert measurement.channel_data["usrp.rx1.spectrum.peak_freq_hz"][0] == pytest.approx(200_300_000.0, abs=bin_hz)
+    assert len(measurement.timestamps) == 1
+
+
+def test_35_a_stream_covers_a_channel_set_not_a_single_channel() -> None:
+    """SoapySDR setupStream and UHD stream args both take a channel list, not one channel."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(samples=4, n_channels=2)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="usrp", driver=driver)
+
+    sdr.start(channels=("0", "1"))
+    measurement = sdr.fetch_iq(n_samples=4)
+
+    driver.start.assert_called_once_with(direction=Direction.RX, channels=("0", "1"))
+    # fetch and stop address the stream, which already knows its channels.
+    driver.fetch_iq.assert_called_once_with(4, direction=Direction.RX)
+    assert set(measurement.channel_data) == {"usrp.rx0.i", "usrp.rx0.q", "usrp.rx1.i", "usrp.rx1.q"}
+
+    sdr.stop()
+    driver.stop.assert_called_once_with(direction=Direction.RX)
+
+
+def test_36_receive_and_transmit_are_separate_streams() -> None:
+    """Starting a receive stream must never key a transmitter."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    sdr = InstroSDR(name="usrp", driver=driver)
+
+    sdr.start(direction=Direction.RX)
+
+    assert driver.start.call_args.kwargs["direction"] is Direction.RX
+    assert driver.start.call_count == 1
+
+    sdr.start(direction=Direction.TX)
+    sdr.stop()
+
+    stopped = {call.kwargs["direction"] for call in driver.stop.call_args_list}
+    assert stopped == {Direction.RX, Direction.TX}
+
+
+def test_37_measure_iq_during_a_stream_comes_off_the_stream() -> None:
+    """A direct device read here would race the stream's own reader on one handle."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(samples=8)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    sdr.start()
+    sdr.measure_iq(n_samples=8)
+
+    driver.fetch_iq.assert_called_once_with(8, direction=Direction.RX)
+    driver.read_iq.assert_not_called()
+
+
+def test_38_measure_iq_without_a_stream_reads_the_device() -> None:
+    """Routing applies only while a stream is running on that direction."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.read_iq.return_value = _capture(samples=8)
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    sdr.measure_iq(n_samples=8)
+
+    driver.read_iq.assert_called_once_with(8, direction=Direction.RX, channels=("0",))
+    driver.fetch_iq.assert_not_called()
+
+
+def test_39_routing_is_per_direction() -> None:
+    """A receive stream must not divert a transmit-side read."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.read_iq.return_value = _capture(samples=8)
+    driver.fetch_iq.return_value = _capture(samples=8)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="usrp", driver=driver)
+
+    sdr.start(direction=Direction.RX)
+    sdr.measure_iq(n_samples=8, direction=Direction.TX)
+
+    driver.read_iq.assert_called_once_with(8, direction=Direction.TX, channels=("0",))
+    driver.fetch_iq.assert_not_called()
+
+
+def test_40_a_routed_read_narrows_a_multi_channel_stream() -> None:
+    """compute_psd asks for one channel; a two-channel stream must not hand back both."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(samples=1024, n_channels=2)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="usrp", driver=driver)
+
+    sdr.start(channels=("0", "1"))
+    measurement = sdr.measure_iq(n_samples=1024, channels=("1",))
+
+    assert set(measurement.channel_data) == {"usrp.rx1.i", "usrp.rx1.q"}
+
+
+def test_41_a_routed_read_rejects_a_channel_the_stream_lacks() -> None:
+    """Asking for a path outside the stream is a caller error, not silently the wrong data."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(samples=8, n_channels=1)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="usrp", driver=driver)
+
+    sdr.start(channels=("0",))
+
+    with pytest.raises(ValueError, match="asked for"):
+        sdr.measure_iq(n_samples=8, channels=("1",))
+
+
+def test_42_routed_reads_stay_contiguous_with_fetches() -> None:
+    """Mixing the two calls must leave one unbroken timeline, since both drain one buffer."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(samples=1024)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="rtl", driver=driver)
+    sdr.start()
+
+    first = sdr.fetch_iq(n_samples=1024)
+    middle = sdr.measure_iq(n_samples=1024)
+    last = sdr.fetch_iq(n_samples=1024)
+
+    period = round(1e9 / 2_400_000.0)
+    assert middle.timestamps[0] - first.timestamps[-1] == period
+    assert last.timestamps[0] - middle.timestamps[-1] == period
+
+
+def test_43_is_streaming_reports_per_direction() -> None:
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    sdr = InstroSDR(name="usrp", driver=driver)
+
+    assert sdr.is_streaming() is False
+    sdr.start(direction=Direction.RX)
+    assert sdr.is_streaming(direction=Direction.RX) is True
+    assert sdr.is_streaming(direction=Direction.TX) is False
+    sdr.stop()
+    assert sdr.is_streaming(direction=Direction.RX) is False
+
+
+def test_44_a_routed_read_reports_stream_health() -> None:
+    """A read that consumes from a stream owes the same overflow report a fetch gives."""
+    published = []
+    publisher = MagicMock()
+    publisher.publish.side_effect = lambda data, **kwargs: published.append(data)
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(samples=8, dropped=512)
+    driver.get_backlog.return_value = 77
+    sdr = InstroSDR(name="rtl", driver=driver, publishers=[publisher])
+    sdr.start()
+
+    sdr.measure_iq(n_samples=8)
+
+    health = next(d for d in published if "rtl.rx0.overflow" in d.channel_data)
+    assert health.channel_data["rtl.rx0.overflow"] == [1.0]
+    assert health.channel_data["rtl.rx0.backlog"] == [77.0]
+
+
+def test_45_a_dropout_opens_a_gap_of_its_true_width() -> None:
+    """Timestamps must not claim contiguity across samples the stream lost."""
+    period = 1e9 / 2_400_000.0
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="rtl", driver=driver)
+    sdr.start()
+
+    driver.fetch_iq.return_value = _capture(samples=1024)
+    clean = sdr.fetch_iq(n_samples=1024)
+    driver.fetch_iq.return_value = _capture(samples=1024, dropped=4096)
+    after = sdr.fetch_iq(n_samples=1024)
+
+    gap = after.timestamps[0] - clean.timestamps[-1]
+    assert gap == round(4097 * period)  # the 4096 lost samples plus the usual one-sample step
+
+
+def test_46_overflow_is_derived_from_the_dropped_count() -> None:
+    """One source of truth: a block with no losses is not an overflow."""
+    assert _capture(dropped=0).overflow is False
+    assert _capture(dropped=1).overflow is True
+    assert _capture(dropped=4096).select(("0",)).dropped_samples == 4096
