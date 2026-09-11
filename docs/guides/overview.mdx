@@ -3,7 +3,7 @@ title: "instro"
 description: "An open-source, vendor-agnostic Python library for interfacing with test equiptment."
 ---
 
-import SupportedInstruments from './suported_instruments.mdx';
+import SupportedInstruments from '/snippets/supported-instruments.mdx';
  
 ```python
 from instro.daq.drivers.ni import NIDAQDriver
@@ -35,14 +35,14 @@ The  python ecosystem for test and measurement is fragmented and redundant. `ins
   />
 </div>
 
+{/* ## Supported Instruments */}
+{/* <SupportedInstruments /> */}
 
-<SupportedInstruments />
-
-
-## Ok, lets go.
+## Lets go.
  
 
-<Columns cols={3}>
+<Columns cols={2}>
+  <Card title="Supported Instruments" icon="microchip" href="/instrumentation/supported-instruments"> </Card>
   <Card title="Quickstart" icon="rocket" href="/instrumentation/quickstart"></Card>
   <Card title="Installation" icon="download" href="/instrumentation/installation"> </Card>
   <Card title="Examples" icon="code" href="/instrumentation/examples"> </Card>

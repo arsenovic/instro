@@ -75,60 +75,11 @@ description: Drive a simulated power supply end-to-end in about five minutes. No
 
  
 
-## `with` block or not
 
-Instruments can also be open/closed automatically using a `with` block.
-
-<Tabs>
-<Tab title="Explicit open() / close()">
-
-Best when the instrument's lifetime spans many functions, or when you want to interleave setup and teardown across event handlers, fixtures, or REPL sessions.
-
-```python
-from instro.psu import InstroPSU
-from instro.psu.drivers import SimulatedPSU
-
-psu = InstroPSU(
-    name="bench_psu",
-    driver=SimulatedPSU("TCPIP0::127.0.0.1::5025::SOCKET"),
-    num_channels=2,
-)
-psu.open()
-
-psu.set_voltage(5.0, channel=1)
-psu.set_current_limit(1.0, channel=1)
-psu.output_enable(True, channel=1)
-
-voltage = psu.get_voltage(channel=1)
-print(f"V: {voltage.latest:.3f} V")
-
-psu.output_enable(False, channel=1)
-psu.close()
-```
-
-</Tab>
-<Tab title="with block">
-
-Best for scripts and tests where the instrument is used inside a single scope. `close()` runs automatically on the way out, even if an exception is raised.
-
-```python
-from instro.psu import InstroPSU
-from instro.psu.drivers import SimulatedPSU
-
-with InstroPSU(
-    name="bench_psu",
-    driver=SimulatedPSU("TCPIP0::127.0.0.1::5025::SOCKET"),
-    num_channels=2,
-) as psu:
-    psu.set_voltage(5.0, channel=1)
-    psu.set_current_limit(1.0, channel=1)
-    psu.output_enable(True, channel=1)
-
-    voltage = psu.get_voltage(channel=1)
-    print(f"V: {voltage.latest:.3f} V")
-```
-
-</Tab>
-</Tabs>
 
  
+<Columns cols={3}>
+  <Card title="Installation" icon="download" href="/instrumentation/installation"> </Card>
+  <Card title="Examples" icon="code" href="/instrumentation/examples"> </Card>
+  <Card title="Supported Instruments" icon="microchip" href="/instrumentation/supported-instruments"> </Card>
+</Columns>

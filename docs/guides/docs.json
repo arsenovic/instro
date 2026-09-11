@@ -21,7 +21,7 @@
             "pages": [
               "instrumentation/quickstart",
               "instrumentation/installation",
-              "instrumentation/driver-dependencies",
+              "instrumentation/supported-instruments",
               "instrumentation/cli"
             ]
           },
