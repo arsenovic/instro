@@ -94,41 +94,34 @@ class SDRDriverBase(abc.ABC):
     @abc.abstractmethod
     def open(self) -> None:
         """Open the underlying transport or SDR handle."""
-        raise NotImplementedError
 
     @abc.abstractmethod
     def close(self) -> None:
         """Close the underlying transport or SDR handle."""
-        raise NotImplementedError
 
     @abc.abstractmethod
     def set_center_freq(self, frequency_hz: float, *, direction: Direction = Direction.RX, channel: str = "0") -> None:
         """Set the RF center frequency in Hz."""
-        raise NotImplementedError
 
     @abc.abstractmethod
     def get_center_freq(self, *, direction: Direction = Direction.RX, channel: str = "0") -> float:
         """Get the RF center frequency in Hz."""
-        raise NotImplementedError
 
     @abc.abstractmethod
     def set_sample_rate(
         self, sample_rate_hz: float, *, direction: Direction = Direction.RX, channel: str = "0"
     ) -> None:
         """Set the sample rate in samples per second."""
-        raise NotImplementedError
 
     @abc.abstractmethod
     def get_sample_rate(self, *, direction: Direction = Direction.RX, channel: str = "0") -> float:
         """Get the sample rate in samples per second."""
-        raise NotImplementedError
 
     @abc.abstractmethod
     def read_iq(
         self, n_samples: int, *, direction: Direction = Direction.RX, channels: Sequence[str] = ("0",)
     ) -> IQCapture:
         """Read one time-aligned block across ``channels``, with the timebase it was taken on."""
-        raise NotImplementedError
 
     # --- Optional: gain ---
 
