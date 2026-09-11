@@ -43,7 +43,7 @@
             "group": "Instruments",
             "icon": "microchip",
             "root": "instrumentation/instruments",
-            "expanded": true,
+            "expanded": false,
             "pages": [
               {
                 "group": "Power Supply (PSU)",
@@ -56,7 +56,7 @@
               "instrumentation/eload",
               {
                 "group": "Multimeter (DMM)",
-                "expanded": true,
+                "expanded": false,
                 "pages": [
                   "instrumentation/dmm",
                   "instrumentation/dmm-simulator"
@@ -72,7 +72,7 @@
             "group": "Protocols",
             "icon": "network-wired",
             "root": "instrumentation/protocols/overview",
-            "expanded": true,
+            "expanded": false,
             "pages": [
               {
                 "group": "I2C",
@@ -90,19 +90,13 @@
             "group": "Transports",
             "icon": "plug",
             "root": "instrumentation/transports/overview",
-            "expanded": true,
+            "expanded": false,
             "pages": [
               "instrumentation/transports/visa",
               "instrumentation/transports/modbus"
             ]
-          },
-          {
-            "group": "Migration",
-            "icon": "arrow-right-arrow-left",
-            "pages": [
-              "migration/v1"
-            ]
           }
+          
         ]
       },
       {

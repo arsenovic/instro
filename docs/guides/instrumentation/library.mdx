@@ -3,63 +3,31 @@ title: Library
 description: The `Instrument`, `Measurement`, and `Command` building blocks
 ---
 
-<Tip>
-**Building a brand-new instrument type?** See [Custom Instruments](/instrumentation/custom-instruments) for the walkthrough.
-</Tip>
+[instrument-link]: https://nominal-io.github.io/instro/reference/instrument/#instro.lib.instrument.Instrument
+[measurement-link]: https://nominal-io.github.io/instro/reference/types/#instro.lib.types.Measurement
+[command-link]: https://nominal-io.github.io/instro/reference/types/#instro.lib.types.Command
 
-# Library
+ 
+ 
 
 ## Instrument
-`Instrument` is the base class for all instrument types. Its responsibilities include:
+[`Instrument`][instrument-link] is the base class for all instrument types. Its responsibilities include:
 * Handling background daemons for synchronous instrument communication.
 * Holds the `publisher`s an instrument will use.
 * Creates and holds the communication interface for the instrument.
 
-When creating a custom instrument type, you must subclass `Instrument`.
-
-## Two ways to get data
-
-You can get measurements into your script in two ways. If a publisher is attached, **both options publish data** whenever a measurement is produced. The difference is who triggers the reads and how often.
-
-|              | Background acquisition | On-demand acquisition |
-| ------------ | ---------------------- | --------------------- |
-| **How**      | Call `start()`. A background daemon reads from the instrument at a fixed, configurable rate. Pull the latest N values with `get_channel()` when you need them. | Skip `start()`. Call read methods (`read_analog()`, `get_voltage()`, …) only when you want a measurement. Each call reads the device, and publishes the result if a publisher is attached. |
-| **Best for** | Apps where data should always be available and publishing. | Apps that need measurements only at specific times; lower system and bus load. DMMs are a good example. |
-
-<Note>
-**Recommendation**
-
-Use the **background daemon pattern** for most workflows. Data is always available and publishing, and it often simplifies application code, especially for buffered acquisitions from a DAQ where you'd need to manage servicing a buffer yourself.
-
-Depending on your application, you may never need to call `get_channel()`, but the background daemon will always publish measurements for later analysis in tools like Nominal Core.
-
-</Note>
+When creating a custom instrument type, you must subclass [`Instrument`][instrument-link]. More info at [Custom Instruments](/instrumentation/custom-instruments).
 
 
 ## Measurements and Commands
-Within an `Instrument`, data is packaged into `Measurement` and `Command` objects when data is read from or sent to an instrument, respectively.
-
-The rationale for this is:
-1. Consistency regardless of instrument type or vendor.
-2. Interoperability of publishers across instrument types.
-3. Better integration with the Nominal ecosystem by enforcing that certain data, like timestamps, is always present.
-
-`Measurement` and `Command` are defined in `instro.lib.types` and re-exported from `instro.lib`, so either import path works: `from instro.lib import Measurement, Command` or `from instro.lib.types import Measurement, Command`.
-
-### Measurement
-A `Measurement` object should be created when reading data from an instrument.
+When controlling an [`Instrument`][instrument-link] get/sets should return   [`Measurement`][measurement-link] or [`Command`][command-link] objects.
 ```py
-@dataclass
-class Measurement:
-    """Data structure to hold measurement data. All channels have a common timebase."""
-
-    channel_data: dict[str, list[float]]
-    timestamps: list[int]
-    tags: dict[str, str] | None = None
+from instro.lib import Measurement, Command
 ```
-
-### Command
-A `Command` object should be created when telling an instrument to do something.
+ 
+* A [`Measurement`][measurement-link] should be created when **reading data** from an instrument.
+ 
+* A [`Command`][command-link] should be created when **telling an instrument to do something**.
 ```py
 @dataclass
 class Command:
@@ -71,7 +39,7 @@ class Command:
     tags: dict[str, str] | None = None
 ```
 
-Unlike `Measurement`, a `Command` carries a single datapoint per channel (`float | str`, not `list[float]`) and a single `timestamp`. The `str` option covers categorical commands whose value is not numeric: mode names and relay states such as `OPEN` / `CLOSED`.
+Unlike [`Measurement`][measurement-link], a [`Command`][command-link] carries a single datapoint per channel (`float | str`, not `list[float]`) and a single `timestamp`. The `str` option covers categorical commands whose value is not numeric: mode names and relay states such as `OPEN` / `CLOSED`.
 
 ### Parameters
 
@@ -113,6 +81,23 @@ psu_legacy = InstroPSU(name="main", driver=BK9115(...), num_channels=1, legacy_n
 - `legacy_naming` is scheduled for **removal in v2.0**. Plan to migrate downstream consumers within that window.
 
 
+### Two ways to get data
+
+You can get measurements into your script in two ways. If a publisher is attached, **both options publish data** whenever a measurement is produced. The difference is who triggers the reads and how often.
+
+|              | Background acquisition | On-demand acquisition |
+| ------------ | ---------------------- | --------------------- |
+| **How**      | Call `start()`. A background daemon reads from the instrument at a fixed, configurable rate. Pull the latest N values with `get_channel()` when you need them. | Skip `start()`. Call read methods (`read_analog()`, `get_voltage()`, …) only when you want a measurement. Each call reads the device, and publishes the result if a publisher is attached. |
+| **Best for** | Apps where data should always be available and publishing. | Apps that need measurements only at specific times; lower system and bus load. DMMs are a good example. |
+
+<Note>
+**Recommendation**
+
+Use the **background daemon pattern** for most workflows. Data is always available and publishing, and it often simplifies application code, especially for buffered acquisitions from a DAQ where you'd need to manage servicing a buffer yourself.
+
+Depending on your application, you may never need to call `get_channel()`, but the background daemon will always publish measurements for later analysis in tools like Nominal Core.
+
+</Note>
 
 
 # High Level Architecture

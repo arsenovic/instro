@@ -1,12 +1,13 @@
 ---
 title: "instro"
-description: "An open-source, vendor-agnostic Python library for interfacing with hardware test equipment."
+description: "An open-source, vendor-agnostic Python library for interfacing with test equiptment."
 ---
 
 import SupportedInstruments from './suported_instruments.mdx';
  
 ```python
-from instro.daq.drivers import NIDAQDriver,LabJackTSeriesDriver
+from instro.daq.drivers.ni import NIDAQDriver
+from instro.daq.drivers.labjack import LabJackTSeriesDriver
 from instro.daq import InstroDAQ
 
 daq = InstroDAQ(
@@ -20,7 +21,7 @@ measurement = daq.read_analog()
 
 
 ### Purpose
-The test and measurement field has long been plagued by *reinventing the wheel*, which drives  up costs. `instro` is an [open-source](https://github.com/nominal-io/instro) Python library for interfacing test and measurement hardware from one unified, typed API. It provides virtual instruments that are **vendor-agnostic** which use `Publishers` automatically stream data to a file, [Nominal](https://nominal.io), or a destination of your own.
+The  python ecosystem for test and measurement is fragmented and redundant. `instro` is an [open-source](https://github.com/nominal-io/instro) Python library for interacting with test equiptment from one unified, typed API. It provides virtual instruments that are **vendor-agnostic**. Instro instruments use `Publishers` to automatically stream data to a file, [nominal](https://nominal.io), or a destination of your own.
 
 <div style={{ display: 'flex', justifyContent: 'center', margin: '1.5rem 0' }}>
   <iframe
@@ -34,10 +35,7 @@ The test and measurement field has long been plagued by *reinventing the wheel*,
   />
 </div>
 
-<div align="center">
-  Next --> [Quickstart](/instrumentation/quickstart)  | [Installation](/instrumentation/installation) | [Examples](/instrumentation/examples)
-</div>
- 
+
 <SupportedInstruments />
 
 
