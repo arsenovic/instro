@@ -36,7 +36,9 @@ try:
         # so discard one before measuring.
         sdr.measure_iq(n_samples=N_SAMPLES)
 
-        freqs, power_db = sdr.compute_psd(n_samples=N_SAMPLES)
+        psd = sdr.compute_psd(n_samples=N_SAMPLES)
+        assert psd is not None  # the dongle always returns samples once open
+        freqs, power_db = psd
 
         # A direct-conversion receiver leaks its local oscillator into bin 0, which lands on
         # the center frequency. Without masking it out, every window's "peak" is that spike.

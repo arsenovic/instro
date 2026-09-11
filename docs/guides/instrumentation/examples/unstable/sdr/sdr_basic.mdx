@@ -41,8 +41,8 @@ try:
 
     # Getters publish a Measurement with the value the device actually accepted, which
     # can differ from the request: tuners quantize both frequency and sample rate.
-    print(f"tuned to {sdr.get_center_freq().latest / 1e6:.4f} MHz")
-    print(f"sampling at {sdr.get_sample_rate().latest:,.0f} Sa/s")
+    print(f"tuned to {float(sdr.get_center_freq().latest) / 1e6:.4f} MHz")
+    print(f"sampling at {float(sdr.get_sample_rate().latest):,.0f} Sa/s")
 
     # One IQ block, published as paired .i and .q channels sharing a timebase derived
     # from the device's own sample rate.
@@ -52,6 +52,7 @@ try:
 
     # Reassemble the complex signal: I is the real part, Q the imaginary part.
     # Swapping them conjugates the signal and mirrors the spectrum about the center.
+    # A multi-channel radio publishes one .i/.q pair per channel, all on this timebase.
     z = np.asarray(iq.channel_data["rtl.rx0.i"]) + 1j * np.asarray(iq.channel_data["rtl.rx0.q"])
     print(f"mean power {10 * np.log10(np.mean(np.abs(z) ** 2)):.1f} dB")
 

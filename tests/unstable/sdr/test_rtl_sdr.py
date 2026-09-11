@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+import time
 from unittest.mock import patch
 
 import numpy as np
@@ -182,13 +183,14 @@ def test_10_rtlsdr_reads_iq_from_a_connected_dongle() -> None:
         assert sdr.get_sample_rate() == pytest.approx(2_400_000.0, rel=1e-4)
 
         capture = sdr.read_iq(4096)
-        assert capture.samples.shape == (4096,)
+        assert capture.samples.shape == (1, 4096)
         assert np.iscomplexobj(capture.samples)
         assert np.any(capture.samples != 0)
+        assert capture.channels == ("0",)
 
         # The dongle has no clock of its own, so it reports a period but no anchor.
         assert capture.sample_period_ns == pytest.approx(1e9 / 2_400_000.0, rel=1e-4)
-        assert capture.center_freq_hz == pytest.approx(89_700_000.0, rel=1e-4)
+        assert capture.center_freq_hz[0] == pytest.approx(89_700_000.0, rel=1e-4)
         assert capture.t0_ns is None
 
         # Optional capabilities the dongle genuinely backs.
@@ -214,9 +216,21 @@ def test_10_rtlsdr_reads_iq_from_a_connected_dongle() -> None:
         with pytest.raises(ValueError, match="only rx channel"):
             sdr.read_iq(1024, direction=Direction.TX)
 
+        # Streaming: consecutive fetches must be contiguous, not merely adjacent.
+        sdr.start()
+        time.sleep(0.3)
+        first = sdr.fetch_iq(65536)
+        second = sdr.fetch_iq(65536)
+        assert first.samples.shape == second.samples.shape == (1, 65536)
+        assert sdr.get_backlog() >= 0
+        sdr.stop()
+
+        with pytest.raises(RuntimeError, match="not streaming"):
+            sdr.fetch_iq(1024)
+
         sdr.close()
         sdr.open()
-        assert sdr.read_iq(1024).samples.shape == (1024,)
+        assert sdr.read_iq(1024).samples.shape == (1, 1024)
     finally:
         sdr.close()
 
@@ -235,7 +249,7 @@ def test_13_rtlsdr_rejects_paths_it_does_not_have(direction: Direction, channel:
         with pytest.raises(ValueError, match="only rx channel"):
             driver.get_center_freq(direction=direction, channel=channel)
         with pytest.raises(ValueError, match="only rx channel"):
-            driver.read_iq(1024, direction=direction, channel=channel)
+            driver.read_iq(1024, direction=direction, channels=(channel,))
         device.read_samples.assert_not_called()
     finally:
         patcher.stop()
@@ -288,5 +302,133 @@ def test_17_rtlsdr_reports_its_gain_range() -> None:
         device.valid_gains_db = [0.0, 0.9, 1.4, 49.6]
 
         assert driver.get_gain_range() == (0.0, 49.6)
+    finally:
+        patcher.stop()
+
+
+def _drain(driver: RTLSDR) -> None:
+    """Wait for the fake async reader to deliver everything, so fetches are deterministic."""
+    thread = driver._stream_thread
+    if thread is not None:
+        thread.join(timeout=5.0)
+
+
+def _streaming_driver(chunks: int = 4, chunk_samples: int = 1024):
+    """A patched RtlSdr whose async reader delivers a fixed number of chunks."""
+    patcher, _, device = _patch_rtlsdr()
+    device.sample_rate = 2_400_000.0
+    device.center_freq = 89_700_000.0
+
+    def fake_async(callback, num_samples, *args, **kwargs):
+        for i in range(chunks):
+            callback(np.full(chunk_samples, i, dtype=np.complex128), None)
+
+    device.read_samples_async.side_effect = fake_async
+    return patcher, device
+
+
+def test_18_fetch_iq_assembles_blocks_from_the_stream() -> None:
+    """Streaming hands back what the async reader delivered, in order."""
+    patcher, _ = _streaming_driver(chunks=4, chunk_samples=1024)
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.open()
+        driver.start()
+        _drain(driver)
+
+        capture = driver.fetch_iq(2048)
+
+        assert capture.samples.shape == (1, 2048)
+        assert capture.channels == ("0",)
+        # First chunk is all 0s, second all 1s: the stream preserved order.
+        assert capture.samples[0][0] == 0
+        assert capture.samples[0][-1] == 1
+        assert capture.overflow is False
+        assert driver.get_backlog() == 2048
+    finally:
+        patcher.stop()
+
+
+def test_19_fetch_iq_before_start_says_so() -> None:
+    """Fetching without a running stream must not silently fall back to a one-shot read."""
+    patcher, device = _streaming_driver()
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.open()
+
+        with pytest.raises(RuntimeError, match="not streaming"):
+            driver.fetch_iq(1024)
+        device.read_samples.assert_not_called()
+    finally:
+        patcher.stop()
+
+
+def test_20_stream_flags_overflow_when_the_buffer_fills() -> None:
+    """A consumer too slow for the radio drops the oldest samples and says so."""
+    patcher, _ = _streaming_driver(chunks=8, chunk_samples=1024)
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.open()
+        driver.STREAM_BUFFER_SAMPLES = 2048  # type: ignore[misc]
+        driver.start()
+        _drain(driver)
+
+        capture = driver.fetch_iq(1024)
+
+        assert capture.overflow is True
+        # The flag is per fetch, so a later block that lost nothing reads clean.
+        assert driver.fetch_iq(1024).overflow is False
+    finally:
+        patcher.stop()
+
+
+def test_21_stop_clears_the_stream() -> None:
+    """Stopping releases the buffer and cancels the reader."""
+    patcher, device = _streaming_driver()
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.open()
+        driver.start()
+        driver.stop()
+
+        device.cancel_read_async.assert_called_once()
+        assert driver.get_backlog() == 0
+        with pytest.raises(RuntimeError, match="not streaming"):
+            driver.fetch_iq(1024)
+    finally:
+        patcher.stop()
+
+
+def test_22_close_stops_a_running_stream() -> None:
+    """A stream left running must not outlive the device handle."""
+    patcher, device = _streaming_driver()
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.open()
+        driver.start()
+        driver.close()
+
+        device.cancel_read_async.assert_called_once()
+        device.close.assert_called_once()
+    finally:
+        patcher.stop()
+
+
+def test_23_read_iq_refuses_while_the_async_reader_owns_the_handle() -> None:
+    """Librtlsdr cannot serve a sync read during an async one; the HAL routes, the driver refuses."""
+    patcher, device = _streaming_driver()
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.open()
+        driver.start()
+        _drain(driver)
+
+        with pytest.raises(RuntimeError, match="streaming"):
+            driver.read_iq(1024)
+        device.read_samples.assert_not_called()
+
+        driver.stop()
+        driver.read_iq(1024)
+        device.read_samples.assert_called_once_with(1024)
     finally:
         patcher.stop()

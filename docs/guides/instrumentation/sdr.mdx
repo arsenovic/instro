@@ -63,8 +63,83 @@ the block's own duration. Such a block continues the previous block's timeline i
 A wider gap re-anchors to the wall clock, so genuine dropouts remain visible as gaps.
 
 <Note>
-`measure_iq` acquires one block per call. Samples arriving between calls are lost, and
-that loss shows up as a gap in the timestamps. There is no gapless streaming API yet.
+`measure_iq` acquires one block per call. Samples arriving between calls are lost, and that
+loss shows up as a gap in the timestamps. Use `start()` and `fetch_iq()` for gapless
+capture.
+</Note>
+
+### Streaming
+
+`measure_iq` is a one-shot read: the radio is idle between calls, so whatever it would have
+produced in that window is gone. For continuous capture, start a stream and fetch from it:
+
+```python
+sdr.start()
+try:
+    while True:
+        block = sdr.fetch_iq(n_samples=262144)
+finally:
+    sdr.stop()
+```
+
+Consecutive fetches are contiguous. On an RTL-SDR at 2.4 MSa/s, successive blocks are
+exactly one sample period apart, so a stream can be concatenated into one unbroken signal.
+
+A stream covers **one direction and a set of channels**, chosen when it starts:
+
+```python
+sdr.start(direction=Direction.RX, channels=("0", "1"))
+block = sdr.fetch_iq(n_samples=65536)   # both channels, time-aligned
+sdr.stop()
+```
+
+`fetch_iq` and `stop` take no channel argument: the stream already knows which channels it
+covers, the same way SoapySDR's `activateStream` acts on a stream handle and UHD's stream
+args fix the channel list up front. Receive and transmit are always separate streams, so
+starting a receive stream never keys a transmitter.
+
+### One-shot reads during a stream
+
+While a stream is running, `measure_iq`, `measure_spectrum` and `compute_psd` are served
+from that stream rather than from the device. Reading the device directly would mean two
+concurrent reads on one handle, which `librtlsdr` does not support and which would quietly
+cost the stream the samples the one-shot read consumed.
+
+Two consequences worth knowing:
+
+- A one-shot read **consumes** from the stream, so it slots into the fetch sequence rather
+  than duplicating or skipping data. Interleaving `measure_iq` with `fetch_iq` still yields
+  one unbroken timeline.
+- It publishes `backlog` and `overflow` exactly as a fetch does, so a dropout is never
+  hidden by having asked for the block through the one-shot call.
+- It returns buffered samples, which can be as old as `get_backlog()` reports. For the most
+  recent samples, drain the backlog or keep the consumer ahead of the radio.
+
+Requesting a channel the stream does not cover raises rather than returning a different
+path's data. `is_streaming(direction=...)` reports whether routing is in effect.
+
+Calling `read_iq` straight on a driver during its own stream raises: only the HAL routes.
+
+Each fetch also publishes stream health on two channels:
+
+| Channel | Meaning |
+|---|---|
+| `backlog` | Samples already captured and waiting to be fetched |
+| `overflow` | `1` when the device dropped samples before this block, `0` otherwise |
+
+A consumer slower than the radio eventually fills the buffer, at which point the oldest
+samples are dropped, `overflow` goes high for that block, and a warning is logged. The flag
+is per fetch: the next clean block reports `0` again. Watch `backlog` to see it coming.
+
+A dropout also opens a real gap in the timestamps. The driver counts what it discarded, so
+the block after a dropout is placed that many sample periods later rather than being chained
+on as though nothing was lost. Concatenating blocks across a dropout therefore splices two
+genuinely separate stretches of signal, and the timestamps say so.
+
+<Note>
+`start()` takes `background=True` to also spin the instrument's background daemon, matching
+`InstroDAQ`. `stop()` always stops both the daemon and the hardware stream, and `close()`
+routes through it, so a stream cannot outlive the device handle.
 </Note>
 
 ### Reassembling the complex signal
@@ -183,6 +258,8 @@ applied to (`rx0` by default). A two-channel transceiver publishes `rx0`, `rx1`,
 | `measure_spectrum()` | `spectrum.peak_freq_hz` | telemetry |
 | `measure_spectrum()` | `spectrum.mean_power_db` | telemetry |
 | `measure_spectrum()` | `spectrum.occupied_bw_hz` | telemetry |
+| `fetch_iq()` | `i`, `q` | telemetry (one value per sample) |
+| `fetch_iq()` | `backlog`, `overflow` | telemetry |
 
 So an RTL-SDR named `rtl` publishes `rtl.rx0.i`, `rtl.rx0.center_freq.cmd`, and so on.
 
@@ -208,7 +285,11 @@ mostly noise it approaches the full sample rate; it is only meaningful on a clea
 | `get_gain()` | `Measurement` | Current gain |
 | `set_bandwidth(bandwidth_hz)` | `Command` | Set IF/filter bandwidth (`0` means auto) |
 | `get_bandwidth()` | `Measurement` | Current bandwidth |
-| `measure_iq(n_samples)` | `Measurement \| None` | One IQ block as paired `.i`/`.q` channels |
+| `start(channels, background=False)` | `None` | Begin continuous acquisition over a channel set |
+| `stop()` | `None` | Stop every running stream and the background daemon |
+| `measure_iq(n_samples, channels)` | `Measurement \| None` | One aligned IQ block as paired `.i`/`.q` channels |
+| `fetch_iq(n_samples)` | `Measurement \| None` | Next contiguous block from a running stream |
+| `get_backlog()` | `int` | Samples per channel waiting to be fetched |
 | `measure_spectrum(n_samples)` | `Measurement \| None` | Four scalar spectrum features |
 | `compute_psd(n_samples)` | `tuple[ndarray, ndarray] \| None` | `(frequencies_hz, power_db)`; publishes nothing |
 | `driver` | `SDRDriverBase` | The underlying driver |
@@ -237,7 +318,7 @@ Required methods are abstract; every radio can tune, set a rate, and hand back s
 | `get_center_freq` | `(*, direction, channel) -> float` | Read the tuned frequency |
 | `set_sample_rate` | `(sample_rate_hz: float, *, direction, channel) -> None` | Set the IQ rate |
 | `get_sample_rate` | `(*, direction, channel) -> float` | Read the IQ rate |
-| `read_iq` | `(n_samples: int, *, direction, channel) -> IQCapture` | Return a block with its timebase |
+| `read_iq` | `(n_samples: int, *, direction, channels) -> IQCapture` | Return an aligned block with its timebase |
 
 Everything else raises `NotImplementedError` by default. Override only what the hardware
 supports, and leave the rest alone:
@@ -252,6 +333,9 @@ supports, and leave the rest alone:
 | `list_antennas` / `set_antenna` / `get_antenna` | Antenna port selection |
 | `get_num_channels` | Signal paths per direction; `0` means the radio cannot do it |
 | `get_frequency_range` / `get_sample_rate_range` | Settable limits |
+| `start(direction, channels)` / `stop(direction)` | Begin and end one direction's stream |
+| `fetch_iq(n_samples, direction)` | Next contiguous block across the stream's channels |
+| `get_backlog(direction)` | Samples per channel captured and waiting |
 
 <Note>
 The two tiers are not symmetric by accident. Radios disagree about what "gain" even means:
@@ -267,14 +351,25 @@ samples it describes:
 
 | Field | Type | Description |
 |---|---|---|
-| `samples` | `np.ndarray` | Complex IQ samples |
-| `sample_period_ns` | `float` | Seconds per sample times 1e9, as the device reports it |
-| `center_freq_hz` | `float` | Tuned frequency these samples were captured at |
+| `samples` | `np.ndarray` | Complex IQ samples, shaped `(n_channels, n_samples)` |
+| `sample_period_ns` | `float` | Seconds per sample times 1e9, shared by every channel |
+| `channels` | `tuple[str, ...]` | Which signal path each row came from |
+| `center_freq_hz` | `tuple[float, ...]` | Tuned frequency per channel |
 | `t0_ns` | `int \| None` | Hardware timestamp of the first sample; `None` if the device has no clock |
+| `dropped_samples` | `int` | How many samples went missing before this block |
+| `overflow` | `bool` | Derived: `dropped_samples > 0` |
 
-Reporting `center_freq_hz` from the same device snapshot as the samples is what lets the
-spectrum carry a real frequency axis. Querying it separately would let a retune slip in
-between and mislabel the result.
+`samples` is always two-dimensional, even for a single-channel radio, and every row shares
+one timebase. That is not a convenience: it is the guarantee multi-channel radios exist to
+provide. SoapySDR fills one buffer per channel from a single `readStream`, and UHD sets
+`ERROR_CODE_ALIGNMENT` rather than hand back channels it could not align. Encoding the
+alignment in the type keeps a driver from returning rows that silently drifted apart.
+
+`center_freq_hz` is per channel because channels of one stream tune independently on a USRP
+or a Pluto. Reporting it from the same device snapshot as the samples is what lets the
+spectrum carry a real frequency axis; querying it separately would let a retune slip in
+between and mislabel the result. `samples_for(channel)` and `center_freq_for(channel)` read
+a single path out of a capture.
 
 Set `t0_ns` when the hardware timestamps its own samples (UHD's `TimeSpec`, NI-RFSA's
 `absolute_initial_x`). `InstroSDR` then places the block exactly where the device says.
@@ -340,15 +435,16 @@ class RTLSDR(SDRDriverBase):
 
     # ... remaining accessors follow the same shape ...
 
-    def read_iq(self, n_samples: int, *, direction=Direction.RX, channel="0") -> IQCapture:
+    def read_iq(self, n_samples: int, *, direction=Direction.RX, channels=("0",)) -> IQCapture:
         if n_samples <= 0 or n_samples % self.READ_GRANULARITY:
             raise ValueError(f"n_samples must be a positive multiple of {self.READ_GRANULARITY}")
         device = self._require_device()
         samples = np.asarray(device.read_samples(n_samples), dtype=np.complex128)
         return IQCapture(
-            samples=samples,
+            samples=samples.reshape(1, -1),  # one row per channel, even when there is one
             sample_period_ns=1e9 / float(device.sample_rate),
-            center_freq_hz=float(device.center_freq),
+            channels=("0",),
+            center_freq_hz=(float(device.center_freq),),
         )
 
     def _require_device(self) -> Any:
