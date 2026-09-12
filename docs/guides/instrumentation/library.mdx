@@ -6,99 +6,64 @@ description: The `Instrument`, `Measurement`, and `Command` building blocks
 [instrument-link]: https://nominal-io.github.io/instro/reference/instrument/#instro.lib.instrument.Instrument
 [measurement-link]: https://nominal-io.github.io/instro/reference/types/#instro.lib.types.Measurement
 [command-link]: https://nominal-io.github.io/instro/reference/types/#instro.lib.types.Command
+[publisher-link]: https://nominal-io.github.io/instro/reference/publishers/#instro.lib.publishers.publisher.Publisher
+[filepublisher-link]: https://nominal-io.github.io/instro/reference/publishers/#instro.lib.publishers.files.FilePublisher
+[nominalcorepublisher-link]: https://nominal-io.github.io/instro/reference/publishers/#instro.lib.publishers.nominal_core.NominalCorePublisher
+[nominalconnectpublisher-link]: https://nominal-io.github.io/instro/reference/publishers/#instro.lib.publishers.nominal_connect.NominalConnectPublisher
 
- 
+This pages gives a conceptual overview of how `instro`  is structured.
  
 
 ## Instrument
-[`Instrument`][instrument-link] is the base class for all instrument types. Its responsibilities include:
-* Handling background daemons for synchronous instrument communication.
-* Holds the `publisher`s an instrument will use.
+[`Instrument`][instrument-link] is the base class for [all instrument types](./supported-instruments). Its responsibilities include:
 * Creates and holds the communication interface for the instrument.
+* Publishing `Measurements and Commands` to any attached `Publishers`. 
+* Handling background daemons for synchronous instrument communication.
 
-When creating a custom instrument type, you must subclass [`Instrument`][instrument-link]. More info at [Custom Instruments](/instrumentation/custom-instruments).
+```py
+from instro.lib import Instrument
+Instrument(
+    name: str,
+    publishers: list[Publisher] | None = None,
+    background_config: BackgroundDaemonConfig | None = None,
+    legacy_naming: bool = False,
+    **kwargs,
+)
+```
+User defined [custom instruments](/instrumentation/custom-instruments) should subclass [`Instrument`][instrument-link]  
 
 
 ## Measurements and Commands
-When controlling an [`Instrument`][instrument-link] get/sets should return   [`Measurement`][measurement-link] or [`Command`][command-link] objects.
-```py
-from instro.lib import Measurement, Command
-```
- 
-* A [`Measurement`][measurement-link] should be created when **reading data** from an instrument.
- 
-* A [`Command`][command-link] should be created when **telling an instrument to do something**.
-```py
-@dataclass
-class Command:
-    """Data structure to hold command data."""
+When controlling an [`Instrument`][instrument-link] gets and sets  return   [`Measurement`][measurement-link] and [`Command`][command-link] objects.
 
-    # Same as Measurement, but with a single datapoint per channel
-    channel_data: dict[str, float | str]
-    timestamp: int
-    tags: dict[str, str] | None = None
+ 
+* A [`Measurement`][measurement-link] is created when **reading data** from an instrument.
+
+ ```py
+ from instro.lib import Measurement
+ Measurement(
+    channel_data: dict[str, list[float] | list[str]],
+    timestamps: list[int],
+    tags: dict[str, str] | None = None,
+)
+ ```
+* A [`Command`][command-link] is created when **writing commands** to an instrument.
+
+
+```py
+from instro.lib import Command
+Command(
+    channel_data: dict[str, float | str],
+    timestamp: int,
+    tags: dict[str, str] | None = None,
+)
 ```
 
 Unlike [`Measurement`][measurement-link], a [`Command`][command-link] carries a single datapoint per channel (`float | str`, not `list[float]`) and a single `timestamp`. The `str` option covers categorical commands whose value is not numeric: mode names and relay states such as `OPEN` / `CLOSED`.
 
 
-## open()/close() or `with` block 
-
-Instruments can also be open/closed automatically using a `with` block.
-
-<Tabs>
-<Tab title="Explicit open() / close()">
-
-Best when the instrument's lifetime spans many functions, or when you want to interleave setup and teardown across event handlers, fixtures, or REPL sessions.
-
-```python
-from instro.psu import InstroPSU
-from instro.psu.drivers import SimulatedPSU
-
-psu = InstroPSU(
-    name="bench_psu",
-    driver=SimulatedPSU("TCPIP0::127.0.0.1::5025::SOCKET"),
-    num_channels=2,
-)
-psu.open()
-
-psu.set_voltage(5.0, channel=1)
-psu.set_current_limit(1.0, channel=1)
-psu.output_enable(True, channel=1)
-
-voltage = psu.get_voltage(channel=1)
-print(f"V: {voltage.latest:.3f} V")
-
-psu.output_enable(False, channel=1)
-psu.close()
-```
-
-</Tab>
-<Tab title="with block">
-
-Best for scripts and tests where the instrument is used inside a single scope. `close()` runs automatically on the way out, even if an exception is raised.
-
-```python
-from instro.psu import InstroPSU
-from instro.psu.drivers import SimulatedPSU
-
-with InstroPSU(
-    name="bench_psu",
-    driver=SimulatedPSU("TCPIP0::127.0.0.1::5025::SOCKET"),
-    num_channels=2,
-) as psu:
-    psu.set_voltage(5.0, channel=1)
-    psu.set_current_limit(1.0, channel=1)
-    psu.output_enable(True, channel=1)
-
-    voltage = psu.get_voltage(channel=1)
-    print(f"V: {voltage.latest:.3f} V")
-```
-
-</Tab>
-</Tabs>
-
-### Parameters
+<Tip>
+### this should go in docstring 
 
 - **`channel_data: dict[str, list[float]]`**
   This dictionary maps <Tooltip tip="A named signal for a series of measurements or computed values (example: voltage, pressure, system state).">channel</Tooltip> names (or numbers, as strings) to lists of numeric measurements. For example, if your instrument has channels `"my_thermocouple1"` and `"my_thermocouple2"`, and you collected 10 samples from each, `channel_data` might look like:
@@ -114,7 +79,22 @@ with InstroPSU(
 - **`tags: dict[str, str] | None`**
   Optional metadata associated with this measurement acquisition. Common tags include test IDs, operator name, or environmental qualifiers. Useful for search, provenance, and analysis.
 
-# Backwards-compatible channel naming (`legacy_naming`)
+</Tip>
+
+
+ 
+
+## High Level Architecture
+
+1. **Instrument Types / HALs**: Distinct classes for each type of instrument (e.g., DAQ, PSU, ELoad, I2C), each providing an opinionated and unified usage model. This design exposes a tailored interface that reflects typical usage patterns, making common workflows consistent across different vendors and models.
+2. **Drivers**: Vendor- or model-specific drivers that handle low-level communication intricacies. HALs rely on these drivers to implement vendor- or model-specific details within the context of their higher level usage model.
+3. **Publishers**: Components responsible for recording or transmitting instrument data and commands. For example, streaming measurement data to a dataset. Instruments own attached publishers and close them during teardown.
+
+<img src="/images/diagram_architecture.png" />
+
+<Tip>
+
+## THIS SHOUDL GO IN MIGRATION:  Backwards-compatible channel naming (`legacy_naming`)
 
 Every category instrument accepts a `legacy_naming: bool = False` keyword at construction. When set to `True`, the instrument publishes channels under their pre-v1.0 names.
 
@@ -136,31 +116,4 @@ psu_legacy = InstroPSU(name="main", driver=BK9115(...), num_channels=1, legacy_n
 **Limitations:**
 - All-or-nothing per instrument. There is no way to use new names for some channels and legacy for others on the same instance.
 - `legacy_naming` is scheduled for **removal in v2.0**. Plan to migrate downstream consumers within that window.
-
-
-### Two ways to get data
-
-You can get measurements into your script in two ways. If a publisher is attached, **both options publish data** whenever a measurement is produced. The difference is who triggers the reads and how often.
-
-|              | Background acquisition | On-demand acquisition |
-| ------------ | ---------------------- | --------------------- |
-| **How**      | Call `start()`. A background daemon reads from the instrument at a fixed, configurable rate. Pull the latest N values with `get_channel()` when you need them. | Skip `start()`. Call read methods (`read_analog()`, `get_voltage()`, …) only when you want a measurement. Each call reads the device, and publishes the result if a publisher is attached. |
-| **Best for** | Apps where data should always be available and publishing. | Apps that need measurements only at specific times; lower system and bus load. DMMs are a good example. |
-
-<Note>
-**Recommendation**
-
-Use the **background daemon pattern** for most workflows. Data is always available and publishing, and it often simplifies application code, especially for buffered acquisitions from a DAQ where you'd need to manage servicing a buffer yourself.
-
-Depending on your application, you may never need to call `get_channel()`, but the background daemon will always publish measurements for later analysis in tools like Nominal Core.
-
-</Note>
-
-
-# High Level Architecture
-
-1. **Instrument Types / HALs**: Distinct classes for each type of instrument (e.g., DAQ, PSU, ELoad, I2C), each providing an opinionated and unified usage model. This design exposes a tailored interface that reflects typical usage patterns, making common workflows consistent across different vendors and models.
-2. **Drivers**: Vendor- or model-specific drivers that handle low-level communication intricacies. HALs rely on these drivers to implement vendor- or model-specific details within the context of their higher level usage model.
-3. **Publishers**: Components responsible for recording or transmitting instrument data and commands. For example, streaming measurement data to a dataset. Instruments own attached publishers and close them during teardown.
-
-<img src="/images/diagram_architecture.png" />
+</Tip>

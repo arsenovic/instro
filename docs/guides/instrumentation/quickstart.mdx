@@ -3,6 +3,7 @@ title: Quickstart
 description: Drive a simulated power supply end-to-end in about five minutes. No hardware required
 ---
 
+
 ## Step-by-step
 `instro` ships with a built-in SCPI simulator, so you can try the   library without owning any hardware.  
 <Steps>
@@ -28,10 +29,11 @@ description: Drive a simulated power supply end-to-end in about five minutes. No
     from instro.psu.drivers import SimulatedPSU
     from instro.lib.publishers import FilePublisher
 
+    file_pub = FilePublisher(format='jsonl', directory='/tmp/instro/') 
     psu = InstroPSU(
         name = "bench_psu",
         driver = SimulatedPSU("TCPIP0::127.0.0.1::5025::SOCKET"),
-        publishers = [FilePublisher(format='jsonl', directory='/tmp/instro/') ],
+        publishers = [file_pub],
         num_channels = 2,
     )
     psu.open()
@@ -53,7 +55,7 @@ description: Drive a simulated power supply end-to-end in about five minutes. No
  
   </Step>
 
-  <Step title="Read a measurement back">
+  <Step title="Make  Measurements">
     Measurement getters return a [Measurement](/instrumentation/library#measurements-and-commands) object. Use `.latest` to grab the current value. Every measurement is timestamped, tagged, and streamed to the [Publishers](/instrumentation/publishers).
 
     ```python
@@ -63,14 +65,22 @@ description: Drive a simulated power supply end-to-end in about five minutes. No
     print(f"I: {current.latest:.3f} A")
     ```
     </Step>
-    <Step title="Close up shop">
+      <Step title="Read the Data">
+    All `Commands` and `Measurements` are logged to the `publishers`.
+    ```python
+    print(filepub.file_path.read_text()) # measurements are written to publisher 
+    ```
+  </Step>
+    <Step title="Close Up Shop">
     When you're done, disable the output and close the connection.  `close()`  stops the background daemon and flushes    the  publishers.
 
     ```python
+    pub_file = file_pub.file_path
     psu.output_enable(False, channel=1)
     psu.close()
     ```
   </Step>
+
 </Steps>
 
  
