@@ -195,8 +195,8 @@ def test_10_rtlsdr_reads_iq_from_a_connected_dongle() -> None:
         assert capture.t0_ns is None
 
         # Optional capabilities the dongle genuinely backs.
-        assert sdr.get_num_channels(Direction.RX) == 1
-        assert sdr.get_num_channels(Direction.TX) == 0
+        assert sdr.get_num_channels(direction=Direction.RX) == 1
+        assert sdr.get_num_channels(direction=Direction.TX) == 0
 
         low, high = sdr.get_gain_range()
         assert 0.0 <= low < high
@@ -260,8 +260,8 @@ def test_14_rtlsdr_reports_its_channel_counts() -> None:
     """Capability discovery: one receive path, no transmit path."""
     driver = RTLSDR(device_index=0)
 
-    assert driver.get_num_channels(Direction.RX) == 1
-    assert driver.get_num_channels(Direction.TX) == 0
+    assert driver.get_num_channels(direction=Direction.RX) == 1
+    assert driver.get_num_channels(direction=Direction.TX) == 0
 
 
 def test_15_rtlsdr_leaves_unsupported_capabilities_unimplemented() -> None:

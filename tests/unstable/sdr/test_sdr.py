@@ -839,3 +839,35 @@ def test_46_overflow_is_derived_from_the_dropped_count() -> None:
     assert _capture(dropped=0).overflow is False
     assert _capture(dropped=1).overflow is True
     assert _capture(dropped=4096).select(("0",)).dropped_samples == 4096
+
+
+class _LockAssertingDict(dict):
+    """Records every mutation's lock state so a write outside the lock is caught deterministically."""
+
+    def __init__(self, lock) -> None:
+        super().__init__()
+        self._lock = lock
+        self.unlocked_writes: list[str] = []
+
+    def __setitem__(self, key, value) -> None:
+        if not self._lock._is_owned():
+            self.unlocked_writes.append(f"set {key}")
+        super().__setitem__(key, value)
+
+    def __delitem__(self, key) -> None:
+        if not self._lock._is_owned():
+            self.unlocked_writes.append(f"del {key}")
+        super().__delitem__(key)
+
+
+def test_47_stream_bookkeeping_happens_under_the_resource_lock() -> None:
+    """A window where _streams and the driver disagree routes a read to the wrong path."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    sdr = InstroSDR(name="rtl", driver=driver)
+    tracked = _LockAssertingDict(sdr._resource_lock)
+    sdr._streams = tracked
+
+    sdr.start(direction=Direction.RX, channels=("0",))
+    sdr.stop()
+
+    assert tracked.unlocked_writes == []
