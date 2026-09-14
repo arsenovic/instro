@@ -205,7 +205,7 @@ class SDRDriverBase(abc.ABC):
 
     # --- Optional: capability discovery ---
 
-    def get_num_channels(self, direction: Direction = Direction.RX) -> int:
+    def get_num_channels(self, *, direction: Direction = Direction.RX) -> int:
         """Number of signal paths in ``direction``. Zero means the radio cannot do it at all."""
         raise NotImplementedError("Channel counts have not been implemented for this driver")
 
@@ -302,10 +302,11 @@ class InstroSDR(Instrument):
                 # Reading the device directly here would race the stream's own reader, so the
                 # block comes off the stream and stays contiguous with surrounding fetches.
                 capture = self._driver.fetch_iq(n_samples, direction=direction).select(channels)
+                t_read_ns = time.time_ns()
                 backlog = self._driver.get_backlog(direction=direction)
             else:
                 capture = self._driver.read_iq(n_samples, direction=direction, channels=tuple(channels))
-            t_read_ns = time.time_ns()
+                t_read_ns = time.time_ns()
             if capture.samples.size == 0:
                 return None
             timestamps = self._iq_timestamps(capture, t_read_ns)
@@ -350,7 +351,7 @@ class InstroSDR(Instrument):
         """Begin continuous acquisition across ``channels``, optionally spinning the daemon too."""
         with self._resource_lock:
             self._driver.start(direction=direction, channels=tuple(channels))
-        self._streams[direction] = tuple(channels)
+            self._streams[direction] = tuple(channels)
         if background:
             super().start()
 
@@ -358,9 +359,9 @@ class InstroSDR(Instrument):
         """Stop the background daemon and every running hardware stream."""
         super().stop()
         for direction in tuple(self._streams):
-            del self._streams[direction]
             with self._resource_lock:
                 self._driver.stop(direction=direction)
+                del self._streams[direction]
 
     @publish_measurement
     def _publish_stream_health(self, backlog: int, overflow: bool, path: str, timestamp: int) -> Measurement:

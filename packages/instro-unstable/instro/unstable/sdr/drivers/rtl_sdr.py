@@ -102,7 +102,7 @@ class RTLSDR(SDRDriverBase):
     def get_freq_correction(self, *, direction: Direction = Direction.RX, channel: str = "0") -> float:
         return float(self._require_rx(direction, channel).freq_correction)
 
-    def get_num_channels(self, direction: Direction = Direction.RX) -> int:
+    def get_num_channels(self, *, direction: Direction = Direction.RX) -> int:
         return 1 if direction is Direction.RX else 0
 
     def read_iq(
