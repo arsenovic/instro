@@ -234,8 +234,11 @@ class InstroSDR(Instrument):
         self._driver.open()
 
     def close(self) -> None:
-        """Close the underlying driver and stop the daemon if present."""
-        super().close()
+        """Close the underlying driver and stop the daemon; the driver is released regardless."""
+        try:
+            super().close()
+        except Exception:
+            logger.warning("SDR '%s' did not shut down cleanly; releasing the driver anyway", self.name, exc_info=True)
         self._driver.close()
 
     @property
@@ -360,8 +363,12 @@ class InstroSDR(Instrument):
         super().stop()
         for direction in tuple(self._streams):
             with self._resource_lock:
-                self._driver.stop(direction=direction)
-                del self._streams[direction]
+                try:
+                    self._driver.stop(direction=direction)
+                finally:
+                    # Drop the record either way: the driver's own guard is authoritative about
+                    # whether it is streaming, and a stale entry routes later reads to a dead stream.
+                    del self._streams[direction]
 
     @publish_measurement
     def _publish_stream_health(self, backlog: int, overflow: bool, path: str, timestamp: int) -> Measurement:
