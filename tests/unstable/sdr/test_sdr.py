@@ -871,3 +871,47 @@ def test_47_stream_bookkeeping_happens_under_the_resource_lock() -> None:
     sdr.stop()
 
     assert tracked.unlocked_writes == []
+
+
+def test_48_close_releases_the_driver_when_the_stream_will_not_stop() -> None:
+    """close() routes through stop(); a raise there must not strand the hardware handle."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.stop.side_effect = RuntimeError("device vanished")
+    sdr = InstroSDR(name="rtl", driver=driver)
+    sdr.start()
+
+    sdr.close()
+
+    driver.close.assert_called_once()
+    assert sdr.is_streaming() is False
+
+
+def test_49_a_failed_stop_still_clears_the_stream_record() -> None:
+    """A stale record would route later reads to fetch_iq on a stream that is not running."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.stop.side_effect = RuntimeError("device vanished")
+    sdr = InstroSDR(name="rtl", driver=driver)
+    sdr.start()
+
+    with pytest.raises(RuntimeError, match="device vanished"):
+        sdr.stop()
+
+    assert sdr.is_streaming() is False
+    assert sdr._streams == {}
+
+
+def test_50_one_directions_failure_does_not_strand_the_other() -> None:
+    """Every stream gets a stop attempt, whatever the first one did."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    sdr = InstroSDR(name="rtl", driver=driver)
+    sdr.start(direction=Direction.RX)
+    sdr.start(direction=Direction.TX)
+    driver.stop.side_effect = [RuntimeError("rx failed"), None]
+
+    with pytest.raises(RuntimeError):
+        sdr.stop()
+    sdr.stop()  # the remaining stream is still tracked, so a second call reaches it
+
+    stopped = {call.kwargs["direction"] for call in driver.stop.call_args_list}
+    assert stopped == {Direction.RX, Direction.TX}
+    assert sdr._streams == {}
