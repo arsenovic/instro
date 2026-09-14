@@ -350,13 +350,46 @@ class InstroSDR(Instrument):
         direction: Direction = Direction.RX,
         channels: Sequence[str] = ("0",),
         background: bool = False,
+        n_samples: int = 1024,
+        publish_spectrum: bool = False,
     ) -> None:
-        """Begin continuous acquisition across ``channels``, optionally spinning the daemon too."""
+        """Begin continuous acquisition across ``channels``, optionally spinning the daemon too.
+
+        With ``background=True`` the daemon fetches ``n_samples`` at a time, publishing each
+        block as it arrives; ``publish_spectrum`` adds the spectrum features derived from
+        that same block.
+        """
         with self._resource_lock:
             self._driver.start(direction=direction, channels=tuple(channels))
             self._streams[direction] = tuple(channels)
         if background:
+            self._define_background_daemon(direction, n_samples, publish_spectrum)
             super().start()
+
+    def _define_background_daemon(self, direction: Direction, n_samples: int, publish_spectrum: bool) -> None:
+        """Register the blocking fetch that paces the daemon, as InstroDAQ does for hardware timing."""
+        # fetch_iq blocks until the radio has the samples, so it times the loop itself; any
+        # interval here would sit between blocks and leave gaps in an otherwise gapless stream.
+        self._background_config.interval = 0
+        self._background_methods = [entry for entry in self._background_methods if entry[0] != self.fetch_iq]
+        self.add_background_daemon_function(
+            self.fetch_iq, n_samples=n_samples, direction=direction, publish_spectrum=publish_spectrum
+        )
+
+    @property
+    def background_interval(self) -> float:
+        """Daemon loop period (s). Always 0 while streaming: the blocking fetch sets the pace."""
+        return self._background_config.interval
+
+    @background_interval.setter
+    def background_interval(self, seconds: float) -> None:
+        """Ignored -- fetch_iq blocks, so an interval would only add gaps between blocks."""
+        logger.warning(
+            "Ignoring background_interval=%s on SDR '%s': fetch_iq blocks until the radio has the "
+            "samples, so it paces the daemon itself. Change n_samples in start() instead.",
+            seconds,
+            self.name,
+        )
 
     def stop(self, **kwargs: Any) -> None:
         """Stop the background daemon and every running hardware stream."""
@@ -384,7 +417,12 @@ class InstroSDR(Instrument):
 
     @publish_measurement
     def fetch_iq(
-        self, n_samples: int = 1024, *, direction: Direction = Direction.RX, **kwargs: Any
+        self,
+        n_samples: int = 1024,
+        *,
+        direction: Direction = Direction.RX,
+        publish_spectrum: bool = False,
+        **kwargs: Any,
     ) -> Measurement | None:
         """Return the next contiguous block from the running stream on ``direction``.
 
@@ -404,6 +442,9 @@ class InstroSDR(Instrument):
             backlog = self._driver.get_backlog(direction=direction)
 
         self._report_stream_health(capture, backlog, direction, timestamps[-1])
+        if publish_spectrum:
+            # Derived from this block, so the spectrum costs an FFT rather than another block.
+            self._publish_spectrum_features(capture, direction, timestamps[-1])
 
         return Measurement(
             channel_data=dict(self._iq_channel_data(capture, direction)),
@@ -467,22 +508,34 @@ class InstroSDR(Instrument):
         if block is None:
             return None
         capture, timestamps = block
-        floor = np.finfo(float).tiny
 
-        channel_data: dict[str, list[float] | list[str]] = {}
+        return Measurement(
+            channel_data=dict(self._spectrum_channel_data(capture, direction)),
+            timestamps=[timestamps[-1]],
+            tags={**self.default_tags, **kwargs},
+        )
+
+    def _spectrum_channel_data(self, capture: IQCapture, direction: Direction) -> dict[str, list[float]]:
+        """The four scalar spectrum features, per channel of a capture."""
+        floor = np.finfo(float).tiny
+        data: dict[str, list[float]] = {}
         for channel in capture.channels:
             freqs, psd = self._psd_from_capture(capture, channel)
             peak = int(np.argmax(psd))
             path = f"{self.name}.{self._path(direction, channel)}.spectrum"
-            channel_data[f"{path}.peak_power_db"] = [float(10.0 * np.log10(max(psd[peak], floor)))]
-            channel_data[f"{path}.peak_freq_hz"] = [float(freqs[peak])]
-            channel_data[f"{path}.mean_power_db"] = [float(10.0 * np.log10(max(psd.mean(), floor)))]
-            channel_data[f"{path}.occupied_bw_hz"] = [self._occupied_bandwidth(freqs, psd)]
+            data[f"{path}.peak_power_db"] = [float(10.0 * np.log10(max(psd[peak], floor)))]
+            data[f"{path}.peak_freq_hz"] = [float(freqs[peak])]
+            data[f"{path}.mean_power_db"] = [float(10.0 * np.log10(max(psd.mean(), floor)))]
+            data[f"{path}.occupied_bw_hz"] = [self._occupied_bandwidth(freqs, psd)]
+        return data
 
+    @publish_measurement
+    def _publish_spectrum_features(self, capture: IQCapture, direction: Direction, timestamp: int) -> Measurement:
+        """Publish spectrum features for a block that was already fetched, without consuming another."""
         return Measurement(
-            channel_data=channel_data,
-            timestamps=[timestamps[-1]],
-            tags={**self.default_tags, **kwargs},
+            channel_data=dict(self._spectrum_channel_data(capture, direction)),
+            timestamps=[timestamp],
+            tags={**self.default_tags},
         )
 
     @staticmethod

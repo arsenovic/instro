@@ -9,12 +9,12 @@ title: "InstroSDR w/ RTL-SDR"
 ```python sdr_basic.py
 """Example: InstroSDR w/ RTL-SDR.
 
-Tunes a dongle to an FM broadcast station and streams continuously, publishing raw IQ
-and a spectrum summary each iteration to a dataset (Nominal Core publisher). Runs until
-interrupted with Ctrl-C.
+Tunes a dongle to an FM broadcast station and streams continuously in the background,
+publishing raw IQ and a spectrum summary from each block to a dataset (Nominal Core
+publisher). Runs until interrupted with Ctrl-C.
 """
 
-import numpy as np
+import time
 
 from instro.lib.publishers import NominalCorePublisher
 from instro.unstable.sdr import InstroSDR
@@ -41,17 +41,12 @@ try:
     print(f"tuned to {float(sdr.get_center_freq().latest) / 1e6:.4f} MHz")
     print(f"sampling at {float(sdr.get_sample_rate().latest):,.0f} Sa/s")
 
-    sdr.start()
+    sdr.start(background=True, n_samples=N_SAMPLES, publish_spectrum=True)
     print("streaming, Ctrl-C to stop")
 
     try:
         while True:
-            iq = sdr.fetch_iq(n_samples=N_SAMPLES)
-            z = np.asarray(iq.channel_data["rtl.rx0.i"]) + 1j * np.asarray(iq.channel_data["rtl.rx0.q"])
-            spectrum = sdr.measure_spectrum(n_samples=N_SAMPLES)
-            peak_mhz = spectrum.channel_data["rtl.rx0.spectrum.peak_freq_hz"][0] / 1e6
-            peak_db = spectrum.channel_data["rtl.rx0.spectrum.peak_power_db"][0]
-            print(f"peak {peak_db:>6.1f} dB @ {peak_mhz:.3f} MHz  backlog {sdr.get_backlog():>9,}")
+            time.sleep(1)
     except KeyboardInterrupt:
         pass
 finally:

@@ -136,10 +136,31 @@ the block after a dropout is placed that many sample periods later rather than b
 on as though nothing was lost. Concatenating blocks across a dropout therefore splices two
 genuinely separate stretches of signal, and the timestamps say so.
 
+### Streaming in the background
+
+`start(background=True)` hands the fetch loop to the instrument's daemon, so blocks publish
+continuously without a loop of your own:
+
+```python
+sdr.start(background=True, n_samples=262144, publish_spectrum=True)
+```
+
+The daemon calls `fetch_iq` with that block size. Because `fetch_iq` blocks until the radio
+has the samples, it paces the loop itself, exactly as `InstroDAQ` does for hardware-timed
+reads. `background_interval` is therefore forced to `0` and refuses to be set: any interval
+would sit *between* blocks and punch gaps into an otherwise gapless stream.
+
+<Warning>
+Do not call `measure_spectrum` in a `fetch_iq` loop. While streaming it is served from the
+stream too, so it consumes a whole block and publishes only the four scalars from it, and
+the IQ in that block never reaches your publishers. A loop alternating the two publishes
+roughly half the samples, in blocks the length of `n_samples` separated by gaps of the same
+length. Pass `publish_spectrum=True` to `fetch_iq` instead and both come from one block.
+</Warning>
+
 <Note>
-`start()` takes `background=True` to also spin the instrument's background daemon, matching
-`InstroDAQ`. `stop()` always stops both the daemon and the hardware stream, and `close()`
-routes through it, so a stream cannot outlive the device handle.
+`stop()` always stops both the daemon and the hardware stream, and `close()` routes through
+it, so a stream cannot outlive the device handle.
 </Note>
 
 ### Reassembling the complex signal
@@ -285,10 +306,10 @@ mostly noise it approaches the full sample rate; it is only meaningful on a clea
 | `get_gain()` | `Measurement` | Current gain |
 | `set_bandwidth(bandwidth_hz)` | `Command` | Set IF/filter bandwidth (`0` means auto) |
 | `get_bandwidth()` | `Measurement` | Current bandwidth |
-| `start(channels, background=False)` | `None` | Begin continuous acquisition over a channel set |
+| `start(channels, background, n_samples, publish_spectrum)` | `None` | Begin continuous acquisition over a channel set |
 | `stop()` | `None` | Stop every running stream and the background daemon |
 | `measure_iq(n_samples, channels)` | `Measurement \| None` | One aligned IQ block as paired `.i`/`.q` channels |
-| `fetch_iq(n_samples)` | `Measurement \| None` | Next contiguous block from a running stream |
+| `fetch_iq(n_samples, publish_spectrum)` | `Measurement \| None` | Next contiguous block; optionally publishes its spectrum too |
 | `get_backlog()` | `int` | Samples per channel waiting to be fetched |
 | `measure_spectrum(n_samples)` | `Measurement \| None` | Four scalar spectrum features |
 | `compute_psd(n_samples)` | `tuple[ndarray, ndarray] \| None` | `(frequencies_hz, power_db)`; publishes nothing |

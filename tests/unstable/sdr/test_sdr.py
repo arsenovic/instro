@@ -915,3 +915,97 @@ def test_50_one_directions_failure_does_not_strand_the_other() -> None:
     stopped = {call.kwargs["direction"] for call in driver.stop.call_args_list}
     assert stopped == {Direction.RX, Direction.TX}
     assert sdr._streams == {}
+
+
+def test_51_background_start_registers_the_blocking_fetch() -> None:
+    """Regression: background=True spun a daemon with an empty work list, so nothing published."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(samples=8)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    try:
+        sdr.start(background=True, n_samples=8)
+
+        registered = [(method, kwargs) for method, _, kwargs in sdr._background_methods]
+        assert [m for m, _ in registered] == [sdr.fetch_iq]
+        assert registered[0][1]["n_samples"] == 8
+    finally:
+        sdr.stop()
+
+
+def test_52_the_blocking_fetch_paces_the_daemon_not_an_interval() -> None:
+    """fetch_iq waits on the radio, so any interval would sit between blocks and open gaps."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(samples=8)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="rtl", driver=driver)
+    assert sdr.background_interval == 1.0  # the Instrument default
+
+    try:
+        sdr.start(background=True, n_samples=8)
+        assert sdr.background_interval == 0
+    finally:
+        sdr.stop()
+
+
+def test_53_setting_the_interval_is_refused_with_a_warning(caplog) -> None:
+    """Silently honouring it would reintroduce the gaps the zeroed interval exists to avoid."""
+    sdr = InstroSDR(name="rtl", driver=MagicMock(spec=_MinimalSDRDriver))
+
+    with caplog.at_level(logging.WARNING, logger="instro.unstable.sdr.sdr"):
+        sdr.background_interval = 2.5
+
+    assert sdr.background_interval == 1.0  # unchanged
+    assert any("Ignoring background_interval" in r.getMessage() for r in caplog.records)
+
+
+def test_54_restarting_does_not_register_the_fetch_twice() -> None:
+    """A second start() would otherwise double every published block."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(samples=8)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    try:
+        sdr.start(background=True, n_samples=8)
+        sdr.start(background=True, n_samples=16)
+
+        assert len(sdr._background_methods) == 1
+        assert sdr._background_methods[0][2]["n_samples"] == 16  # the newer block size wins
+    finally:
+        sdr.stop()
+
+
+def test_55_fetch_iq_can_publish_the_spectrum_from_the_same_block() -> None:
+    """Regression: measure_spectrum consumed a second block, so half the IQ never published."""
+    published = []
+    publisher = MagicMock()
+    publisher.publish.side_effect = lambda data, **kwargs: published.append(data)
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(samples=1024)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="rtl", driver=driver, publishers=[publisher])
+    sdr.start()
+
+    measurement = sdr.fetch_iq(n_samples=1024, publish_spectrum=True)
+
+    assert driver.fetch_iq.call_count == 1  # one block covered both
+    assert set(measurement.channel_data) == {"rtl.rx0.i", "rtl.rx0.q"}
+    spectrum = next(d for d in published if "rtl.rx0.spectrum.peak_freq_hz" in d.channel_data)
+    assert spectrum.timestamps == [measurement.timestamps[-1]]
+
+
+def test_56_fetch_iq_publishes_no_spectrum_by_default() -> None:
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(samples=1024)
+    driver.get_backlog.return_value = 0
+    published = []
+    publisher = MagicMock()
+    publisher.publish.side_effect = lambda data, **kwargs: published.append(data)
+    sdr = InstroSDR(name="rtl", driver=driver, publishers=[publisher])
+    sdr.start()
+
+    sdr.fetch_iq(n_samples=1024)
+
+    assert not any("spectrum" in c for d in published for c in d.channel_data)
