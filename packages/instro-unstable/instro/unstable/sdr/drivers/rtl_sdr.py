@@ -54,10 +54,14 @@ class RTLSDR(SDRDriverBase):
 
     def close(self) -> None:
         if self._stream_thread is not None:
-            self.stop()
+            try:
+                self.stop()
+            except Exception:
+                logger.warning("could not stop the RTLSDR stream cleanly", exc_info=True)
         if self._device is not None:
             self._device.close()
             self._device = None
+        self._stream_thread = None
 
     def set_center_freq(self, frequency_hz: float, *, direction: Direction = Direction.RX, channel: str = "0") -> None:
         self._require_rx(direction, channel).center_freq = float(frequency_hz)
@@ -118,7 +122,7 @@ class RTLSDR(SDRDriverBase):
     def start(self, *, direction: Direction = Direction.RX, channels: Sequence[str] = ("0",)) -> None:
         device = self._require_channels(direction, channels)
         with self._stream_lock:
-            if self._stream_thread is not None:
+            if self._stream_thread is not None and self._stream_thread.is_alive():
                 return
             self._chunks.clear()
             self._buffered = 0
@@ -129,20 +133,32 @@ class RTLSDR(SDRDriverBase):
         self._stream_thread.start()
 
     def stop(self, *, direction: Direction = Direction.RX) -> None:
-        self._require_channels(direction, ("0",))
+        self._check_path(direction, ("0",))
         thread = self._stream_thread
         if thread is None:
             return
 
-        self._streaming = False
-        # cancel_read_async unblocks read_samples_async inside the worker.
-        self._require_device().cancel_read_async()
+        with self._stream_lock:
+            self._streaming = False
+            self._stream_lock.notify_all()
+
+        # The handle may already be gone, but the stream still has to come down.
+        if self._device is not None:
+            try:
+                # cancel_read_async unblocks read_samples_async inside the worker.
+                self._device.cancel_read_async()
+            except Exception:
+                logger.warning("RTLSDR async reader could not be cancelled", exc_info=True)
+
         thread.join(timeout=self.STREAM_STOP_TIMEOUT_S)
-        self._stream_thread = None
         with self._stream_lock:
             self._chunks.clear()
             self._buffered = 0
-            self._stream_lock.notify_all()
+        if thread.is_alive():
+            # Keep the thread recorded so start() refuses to open a second reader on one handle.
+            logger.error("RTLSDR stream worker still running after %ss", self.STREAM_STOP_TIMEOUT_S)
+            return
+        self._stream_thread = None
 
     def fetch_iq(self, n_samples: int, *, direction: Direction = Direction.RX) -> IQCapture:
         device = self._require_channels(direction, ("0",))
@@ -217,10 +233,13 @@ class RTLSDR(SDRDriverBase):
             dropped_samples=dropped_samples,
         )
 
-    def _require_channels(self, direction: Direction, channels: Sequence[str]) -> Any:
+    def _check_path(self, direction: Direction, channels: Sequence[str]) -> None:
         """An RTL-SDR is receive-only with a single signal path."""
         if direction is not Direction.RX or tuple(channels) != ("0",):
             raise ValueError(f"RTLSDR has only rx channel '0', got {direction.value} channels {tuple(channels)!r}")
+
+    def _require_channels(self, direction: Direction, channels: Sequence[str]) -> Any:
+        self._check_path(direction, channels)
         return self._require_device()
 
     def _require_rx(self, direction: Direction, channel: str) -> Any:

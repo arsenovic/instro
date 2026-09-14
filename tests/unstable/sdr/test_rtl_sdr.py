@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+import threading
 import time
 from unittest.mock import patch
 
@@ -430,5 +431,107 @@ def test_23_read_iq_refuses_while_the_async_reader_owns_the_handle() -> None:
         driver.stop()
         driver.read_iq(1024)
         device.read_samples.assert_called_once_with(1024)
+    finally:
+        patcher.stop()
+
+
+def _wedged_streaming_driver():
+    """A patched RtlSdr whose async reader ignores cancel_read_async, as a wedged USB reader would."""
+    patcher, _, device = _patch_rtlsdr()
+    release = threading.Event()
+
+    def blocking_async(callback, num_samples, *args, **kwargs):
+        release.wait(timeout=30)
+
+    device.read_samples_async.side_effect = blocking_async
+    device.cancel_read_async.side_effect = lambda *a, **k: None  # does not unblock the reader
+    return patcher, device, release
+
+
+def test_24_stop_keeps_a_worker_that_outlived_its_join() -> None:
+    """Clearing the handle would let start() open a second reader on top of the live one."""
+    patcher, device, release = _wedged_streaming_driver()
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.STREAM_STOP_TIMEOUT_S = 0.2  # type: ignore[misc]
+        driver.open()
+        driver.start()
+
+        driver.stop()
+
+        assert driver._stream_thread is not None  # still recorded, so start() will not double up
+        driver.start()
+        assert device.read_samples_async.call_count == 1
+    finally:
+        release.set()
+        patcher.stop()
+
+
+def test_25_close_releases_the_handle_when_the_vendor_already_closed_it() -> None:
+    """Regression: stop() touched the device first, so close() raised and leaked the handle."""
+    patcher, _, device = _patch_rtlsdr()
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.open()
+        driver.start()
+        device.device_opened = False  # what pyrtlsdr does to itself on a transport error
+
+        driver.close()
+
+        assert driver._stream_thread is None
+        assert driver._device is None
+        device.close.assert_called_once()
+    finally:
+        patcher.stop()
+
+
+def test_26_stop_wakes_a_blocked_fetch_immediately() -> None:
+    """stop() must not leave a pending fetch parked until its own timeout expires."""
+    patcher, _, release = _wedged_streaming_driver()
+    try:
+        driver = RTLSDR(device_index=0)
+        # Long enough that waking only after the join would be unmistakable.
+        driver.STREAM_STOP_TIMEOUT_S = 1.5  # type: ignore[misc]
+        driver.FETCH_TIMEOUT_S = 30.0  # type: ignore[misc]
+        driver.open()
+        driver.start()
+
+        outcome: list[tuple[str, float]] = []
+
+        def fetch() -> None:
+            start = time.monotonic()
+            try:
+                driver.fetch_iq(1024)
+                outcome.append(("returned", time.monotonic() - start))
+            except Exception as exc:  # noqa: BLE001 -- the type is the assertion
+                outcome.append((type(exc).__name__, time.monotonic() - start))
+
+        waiter = threading.Thread(target=fetch)
+        waiter.start()
+        time.sleep(0.2)  # let it reach the wait()
+        driver.stop()
+        waiter.join(timeout=5)
+
+        assert outcome, "fetch never returned"
+        kind, elapsed = outcome[0]
+        assert kind == "RuntimeError"
+        assert elapsed < 0.8, f"fetch waited {elapsed:.1f}s; stop() did not wake it until the join finished"
+    finally:
+        release.set()
+        patcher.stop()
+
+
+def test_27_start_restarts_after_the_worker_died() -> None:
+    """A worker that exited on its own must not block a later start()."""
+    patcher, device = _streaming_driver(chunks=1, chunk_samples=256)
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.open()
+        driver.start()
+        _drain(driver)  # the fake reader returns, so the worker exits
+
+        driver.start()
+
+        assert device.read_samples_async.call_count == 2
     finally:
         patcher.stop()
