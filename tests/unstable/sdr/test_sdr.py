@@ -516,6 +516,16 @@ def test_25_published_channels_name_the_signal_path() -> None:
     assert set(command.channel_data) == {"rtl.rx0.center_freq.cmd"}
 
 
+class _FrozenClock:
+    """Stands in for the ``time`` module so a backstamp does not depend on scheduling."""
+
+    def __init__(self, start: int = 1_700_000_000_000_000_000) -> None:
+        self.now = start
+
+    def time_ns(self) -> int:
+        return self.now
+
+
 def _capture(samples: int = 8, dropped: int = 0, n_channels: int = 1) -> IQCapture:
     return IQCapture(
         samples=np.zeros((n_channels, samples), dtype=np.complex128),
@@ -563,8 +573,9 @@ def test_27_fetch_iq_reports_a_dropped_block(caplog) -> None:
     assert any("dropped samples" in r.getMessage() for r in caplog.records)
 
 
-def test_28_fetch_iq_blocks_are_contiguous() -> None:
+def test_28_fetch_iq_blocks_are_contiguous(monkeypatch) -> None:
     """Consecutive fetches continue one timeline: streaming loses nothing between calls."""
+    monkeypatch.setattr(sdr_module, "time", _FrozenClock())
     driver = MagicMock(spec=_MinimalSDRDriver)
     driver.fetch_iq.return_value = _capture(samples=1024)
     driver.get_backlog.return_value = 0
@@ -756,8 +767,9 @@ def test_41_a_routed_read_rejects_a_channel_the_stream_lacks() -> None:
         sdr.measure_iq(n_samples=8, channels=("1",))
 
 
-def test_42_routed_reads_stay_contiguous_with_fetches() -> None:
+def test_42_routed_reads_stay_contiguous_with_fetches(monkeypatch) -> None:
     """Mixing the two calls must leave one unbroken timeline, since both drain one buffer."""
+    monkeypatch.setattr(sdr_module, "time", _FrozenClock())
     driver = MagicMock(spec=_MinimalSDRDriver)
     driver.fetch_iq.return_value = _capture(samples=1024)
     driver.get_backlog.return_value = 0
@@ -801,16 +813,6 @@ def test_44_a_routed_read_reports_stream_health() -> None:
     health = next(d for d in published if "rtl.rx0.overflow" in d.channel_data)
     assert health.channel_data["rtl.rx0.overflow"] == [1.0]
     assert health.channel_data["rtl.rx0.backlog"] == [77.0]
-
-
-class _FrozenClock:
-    """Stands in for the ``time`` module so a backstamp does not depend on scheduling."""
-
-    def __init__(self, start: int = 1_700_000_000_000_000_000) -> None:
-        self.now = start
-
-    def time_ns(self) -> int:
-        return self.now
 
 
 def _dropout_gap(monkeypatch, elapsed_ns: int) -> int:
