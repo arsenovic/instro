@@ -176,12 +176,7 @@ class SDRDriverBase(abc.ABC):
     # --- Optional: streaming ---
 
     def start(self, *, direction: Direction = Direction.RX, channels: Sequence[str] = ("0",)) -> None:
-        """Begin continuous acquisition across ``channels`` so ``fetch_iq`` returns contiguous blocks.
-
-        One stream covers one direction and the whole channel set, which is how SoapySDR's
-        ``setupStream`` and UHD's stream args are shaped. Transmit is always a separate
-        stream from receive.
-        """
+        """Begin continuous acquisition; one stream covers one direction and the whole channel set."""
         raise NotImplementedError("Streaming has not been implemented for this driver")
 
     def stop(self, *, direction: Direction = Direction.RX) -> None:
@@ -189,13 +184,7 @@ class SDRDriverBase(abc.ABC):
         raise NotImplementedError("Streaming has not been implemented for this driver")
 
     def fetch_iq(self, n_samples: int) -> IQCapture:
-        """Block until ``n_samples`` are available on the receive stream, then return them.
-
-        Covers every channel the stream was started with. Unlike ``read_iq``, consecutive
-        fetches are contiguous: nothing is lost between them. Set ``dropped_samples`` on the
-        capture when the device lost some first, and raise ``ValueError`` for an
-        ``n_samples`` larger than the stream can buffer, which could never be satisfied.
-        """
+        """Block until ``n_samples`` are available; raise ``ValueError`` if more than the buffer holds."""
         raise NotImplementedError("Streaming has not been implemented for this driver")
 
     def get_backlog(self) -> int:
@@ -324,12 +313,7 @@ class InstroSDR(Instrument):
     def measure_iq(
         self, n_samples: int = 1024, *, channels: Sequence[str] | None = None, **kwargs: Any
     ) -> Measurement | None:
-        """Return one time-aligned IQ block across ``channels`` as paired ``.i``/``.q`` channels.
-
-        ``channels`` defaults to every channel the running stream covers, or the first
-        receive path when nothing is streaming. Every channel shares one timestamp vector,
-        so a multi-channel radio's rows stay aligned in the published data.
-        """
+        """One time-aligned IQ block as paired ``.i``/``.q``, defaulting to the stream's channels."""
         block = self._read_iq_block(n_samples, channels)
         if block is None:
             return None
@@ -350,12 +334,7 @@ class InstroSDR(Instrument):
         n_samples: int = 1024,
         publish_spectrum: bool = False,
     ) -> None:
-        """Begin continuous acquisition across ``channels``, optionally spinning the daemon too.
-
-        With ``background=True`` the daemon fetches ``n_samples`` at a time, publishing each
-        block as it arrives; ``publish_spectrum`` adds the spectrum features derived from
-        that same block.
-        """
+        """Begin continuous acquisition; ``background`` hands the ``n_samples`` fetch loop to the daemon."""
         with self._resource_lock:
             self._driver.start(direction=direction, channels=tuple(channels))
             self._streams[direction] = tuple(channels)
@@ -412,12 +391,7 @@ class InstroSDR(Instrument):
 
     @publish_measurement
     def fetch_iq(self, n_samples: int = 1024, *, publish_spectrum: bool = False, **kwargs: Any) -> Measurement | None:
-        """Return the next contiguous block from the running stream on ``direction``.
-
-        Covers every channel the stream was started with. Unlike ``measure_iq``, nothing is
-        lost between consecutive calls unless the device reports an overflow, which
-        publishes on the ``overflow`` channel.
-        """
+        """Return the next contiguous block from the running stream, across every channel it covers."""
         if n_samples <= 0:
             raise ValueError(f"n_samples must be positive, got {n_samples}")
 
@@ -484,10 +458,7 @@ class InstroSDR(Instrument):
     def measure_spectrum(
         self, n_samples: int = 1024, *, channels: Sequence[str] | None = None, **kwargs: Any
     ) -> Measurement | None:
-        """Publish scalar spectrum features per channel; use ``compute_psd`` for the array.
-
-        ``channels`` defaults to every channel the running stream covers.
-        """
+        """Publish scalar spectrum features per channel, defaulting to the stream's channels."""
         block = self._read_iq_block(n_samples, channels)
         if block is None:
             return None
