@@ -164,6 +164,12 @@ class RTLSDR(SDRDriverBase):
             raise RuntimeError("RTLSDR is not streaming; call start() first")
         if n_samples <= 0:
             raise ValueError(f"n_samples must be positive, got {n_samples}")
+        if n_samples > self.STREAM_BUFFER_SAMPLES:
+            # The reader evicts to stay inside the buffer, so the wait below could never end.
+            raise ValueError(
+                f"n_samples {n_samples:,} exceeds the {self.STREAM_BUFFER_SAMPLES:,}-sample stream buffer, "
+                "so the wait can never finish; fetch less or raise STREAM_BUFFER_SAMPLES"
+            )
 
         deadline = time.monotonic() + self.FETCH_TIMEOUT_S
         with self._stream_lock:
