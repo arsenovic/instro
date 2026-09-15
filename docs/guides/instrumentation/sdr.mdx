@@ -110,6 +110,9 @@ Two consequences worth knowing:
 - A one-shot read **consumes** from the stream, so it slots into the fetch sequence rather
   than duplicating or skipping data. Interleaving `measure_iq` with `fetch_iq` still yields
   one unbroken timeline.
+- A stream block is consumed whole, so `channels` defaults to every channel the stream
+  covers. Naming a subset still works and still publishes only that subset, but the rest of
+  that block is consumed with it and cannot be fetched again.
 - It publishes `backlog` and `overflow` exactly as a fetch does, so a dropout is never
   hidden by having asked for the block through the one-shot call.
 - It returns buffered samples, which can be as old as `get_backlog()` reports. For the most
@@ -130,6 +133,11 @@ Each fetch also publishes stream health on two channels:
 A consumer slower than the radio eventually fills the buffer, at which point the oldest
 samples are dropped, `overflow` goes high for that block, and a warning is logged. The flag
 is per fetch: the next clean block reports `0` again. Watch `backlog` to see it coming.
+
+`n_samples` cannot exceed what the stream buffers, since the reader evicts to stay inside
+that bound and the request could never be filled. Asking for more raises `ValueError`
+immediately rather than waiting out the fetch timeout while samples are discarded. On an
+RTL-SDR the bound is `RTLSDR.STREAM_BUFFER_SAMPLES`.
 
 A dropout also opens a real gap in the timestamps. The driver counts what it discarded, so
 the block after a dropout is placed that many sample periods later rather than being chained
