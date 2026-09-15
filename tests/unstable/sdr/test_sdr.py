@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+import instro.unstable.sdr.sdr as sdr_module
 from instro.lib import Command
 from instro.unstable.sdr import Direction, InstroSDR, IQCapture, SDRDriverBase
 
@@ -802,9 +803,20 @@ def test_44_a_routed_read_reports_stream_health() -> None:
     assert health.channel_data["rtl.rx0.backlog"] == [77.0]
 
 
-def test_45_a_dropout_opens_a_gap_of_its_true_width() -> None:
-    """Timestamps must not claim contiguity across samples the stream lost."""
-    period = 1e9 / 2_400_000.0
+class _FrozenClock:
+    """Stands in for the ``time`` module so a backstamp does not depend on scheduling."""
+
+    def __init__(self, start: int = 1_700_000_000_000_000_000) -> None:
+        self.now = start
+
+    def time_ns(self) -> int:
+        return self.now
+
+
+def _dropout_gap(monkeypatch, elapsed_ns: int) -> int:
+    """Gap a 4096-sample dropout opens when ``elapsed_ns`` of wall clock passed between fetches."""
+    clock = _FrozenClock()
+    monkeypatch.setattr(sdr_module, "time", clock)
     driver = MagicMock(spec=_MinimalSDRDriver)
     driver.get_backlog.return_value = 0
     sdr = InstroSDR(name="rtl", driver=driver)
@@ -812,11 +824,34 @@ def test_45_a_dropout_opens_a_gap_of_its_true_width() -> None:
 
     driver.fetch_iq.return_value = _capture(samples=1024)
     clean = sdr.fetch_iq(n_samples=1024)
+    clock.now += elapsed_ns
     driver.fetch_iq.return_value = _capture(samples=1024, dropped=4096)
     after = sdr.fetch_iq(n_samples=1024)
 
-    gap = after.timestamps[0] - clean.timestamps[-1]
+    return after.timestamps[0] - clean.timestamps[-1]
+
+
+def test_45_a_dropout_opens_a_gap_of_its_true_width(monkeypatch) -> None:
+    """Timestamps must not claim contiguity across samples the stream lost."""
+    period = 1e9 / 2_400_000.0
+
+    gap = _dropout_gap(monkeypatch, elapsed_ns=0)
+
     assert gap == round(4097 * period)  # the 4096 lost samples plus the usual one-sample step
+
+
+def test_45b_a_dropout_keeps_its_width_when_the_clock_ran_ahead(monkeypatch) -> None:
+    """Regression: the floor was skipped once the backstamp passed the previous timeline."""
+    period = 1e9 / 2_400_000.0
+    block_ns = round(1023 * period)
+    dropout_ns = round(4097 * period)
+
+    # More wall clock than one block covers, but less than the dropout: the backstamp lands
+    # ahead of the previous timeline, which used to discard the dropped-sample advance entirely.
+    gap = _dropout_gap(monkeypatch, elapsed_ns=1_250_000)
+
+    assert block_ns < 1_250_000 < dropout_ns
+    assert gap == dropout_ns
 
 
 def test_46_overflow_is_derived_from_the_dropped_count() -> None:
