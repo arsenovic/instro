@@ -193,7 +193,8 @@ class SDRDriverBase(abc.ABC):
 
         Covers every channel the stream was started with. Unlike ``read_iq``, consecutive
         fetches are contiguous: nothing is lost between them. Set ``dropped_samples`` on the
-        capture when the device lost some first.
+        capture when the device lost some first, and raise ``ValueError`` for an
+        ``n_samples`` larger than the stream can buffer, which could never be satisfied.
         """
         raise NotImplementedError("Streaming has not been implemented for this driver")
 
@@ -290,7 +291,7 @@ class InstroSDR(Instrument):
             logger.warning("SDR '%s' dropped samples before this block", self.name)
         self._publish_stream_health(backlog, capture.overflow, self._path(Direction.RX, capture.channels[0]), timestamp)
 
-    def _read_iq_block(self, n_samples: int, channels: Sequence[str]) -> tuple[IQCapture, list[int]] | None:
+    def _read_iq_block(self, n_samples: int, channels: Sequence[str] | None) -> tuple[IQCapture, list[int]] | None:
         """Acquire one capture and resolve its timestamps. Publishes stream health when routed."""
         if n_samples <= 0:
             raise ValueError(f"n_samples must be positive, got {n_samples}")
@@ -298,13 +299,17 @@ class InstroSDR(Instrument):
         backlog: int | None = None
         with self._resource_lock:
             if Direction.RX in self._streams:
+                # A stream block is consumed whole, so narrowing it discards the rest. Default to
+                # the stream's own channels rather than silently dropping the ones not asked for.
+                wanted = tuple(channels) if channels is not None else self._streams[Direction.RX]
                 # Reading the device directly here would race the stream's own reader, so the
                 # block comes off the stream and stays contiguous with surrounding fetches.
-                capture = self._driver.fetch_iq(n_samples).select(channels)
+                capture = self._driver.fetch_iq(n_samples).select(wanted)
                 t_read_ns = time.time_ns()
                 backlog = self._driver.get_backlog()
             else:
-                capture = self._driver.read_iq(n_samples, channels=tuple(channels))
+                wanted = tuple(channels) if channels is not None else ("0",)
+                capture = self._driver.read_iq(n_samples, channels=wanted)
                 t_read_ns = time.time_ns()
             if capture.samples.size == 0:
                 return None
@@ -317,12 +322,13 @@ class InstroSDR(Instrument):
 
     @publish_measurement
     def measure_iq(
-        self, n_samples: int = 1024, *, channels: Sequence[str] = ("0",), **kwargs: Any
+        self, n_samples: int = 1024, *, channels: Sequence[str] | None = None, **kwargs: Any
     ) -> Measurement | None:
         """Return one time-aligned IQ block across ``channels`` as paired ``.i``/``.q`` channels.
 
-        Every channel shares one timestamp vector, so a multi-channel radio's rows stay
-        aligned in the published data.
+        ``channels`` defaults to every channel the running stream covers, or the first
+        receive path when nothing is streaming. Every channel shares one timestamp vector,
+        so a multi-channel radio's rows stay aligned in the published data.
         """
         block = self._read_iq_block(n_samples, channels)
         if block is None:
@@ -476,9 +482,12 @@ class InstroSDR(Instrument):
 
     @publish_measurement
     def measure_spectrum(
-        self, n_samples: int = 1024, *, channels: Sequence[str] = ("0",), **kwargs: Any
+        self, n_samples: int = 1024, *, channels: Sequence[str] | None = None, **kwargs: Any
     ) -> Measurement | None:
-        """Publish scalar spectrum features per channel; use ``compute_psd`` for the array."""
+        """Publish scalar spectrum features per channel; use ``compute_psd`` for the array.
+
+        ``channels`` defaults to every channel the running stream covers.
+        """
         block = self._read_iq_block(n_samples, channels)
         if block is None:
             return None

@@ -543,3 +543,53 @@ def test_27_start_restarts_after_the_worker_died() -> None:
         assert device.read_samples_async.call_count == 2
     finally:
         patcher.stop()
+
+
+def test_28_fetch_larger_than_the_buffer_fails_instead_of_waiting_it_out() -> None:
+    """Regression: the reader evicts to stay inside the buffer, so the wait could never end."""
+    patcher, _, device = _patch_rtlsdr()
+    stop_feeding = threading.Event()
+
+    def feed_forever(callback, num_samples, *args, **kwargs):
+        # A live stream, so the fetch below waits rather than being cut short by the worker
+        # exiting. Without the guard it burns FETCH_TIMEOUT_S while these chunks are evicted.
+        while not stop_feeding.wait(timeout=0.01):
+            callback(np.zeros(num_samples, dtype=np.complex128), None)
+
+    device.read_samples_async.side_effect = feed_forever
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.STREAM_BUFFER_SAMPLES = 2048  # type: ignore[misc]
+        driver.STREAM_CHUNK_SAMPLES = 512  # type: ignore[misc]
+        driver.FETCH_TIMEOUT_S = 5.0  # type: ignore[misc]
+        driver.open()
+        driver.start()
+
+        started = time.monotonic()
+        with pytest.raises(ValueError, match="exceeds the 2,048-sample stream buffer"):
+            driver.fetch_iq(driver.STREAM_BUFFER_SAMPLES + 1)
+        elapsed = time.monotonic() - started
+
+        # The point of the guard: refuse on entry rather than burn FETCH_TIMEOUT_S while the
+        # reader keeps discarding everything it receives.
+        assert elapsed < 0.5, f"took {elapsed:.1f}s; the guard did not short-circuit the wait"
+    finally:
+        stop_feeding.set()
+        patcher.stop()
+
+
+def test_29_fetch_of_exactly_the_buffer_is_allowed() -> None:
+    """The bound is inclusive: a full buffer can be handed over in one fetch."""
+    patcher, _device = _streaming_driver(chunks=2, chunk_samples=1024)
+    try:
+        driver = RTLSDR(device_index=0)
+        driver.STREAM_BUFFER_SAMPLES = 2048  # type: ignore[misc]
+        driver.open()
+        driver.start()
+        _drain(driver)
+
+        capture = driver.fetch_iq(2048)
+
+        assert capture.samples.shape == (1, 2048)
+    finally:
+        patcher.stop()

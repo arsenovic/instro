@@ -1029,3 +1029,51 @@ def test_58_published_acquisition_channels_stay_on_the_receive_path() -> None:
 
     assert set(iq.channel_data) == {"rtl.rx0.i", "rtl.rx0.q"}
     assert all(c.startswith("rtl.rx0.spectrum.") for c in spectrum.channel_data)
+
+
+def test_59_measure_iq_defaults_to_every_channel_the_stream_covers() -> None:
+    """Regression: the default narrowed to rx0, so a two-channel block lost rx1 on the way out."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(samples=8, n_channels=2)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="usrp", driver=driver)
+    sdr.start(channels=("0", "1"))
+
+    measurement = sdr.measure_iq(n_samples=8)
+
+    assert set(measurement.channel_data) == {"usrp.rx0.i", "usrp.rx0.q", "usrp.rx1.i", "usrp.rx1.q"}
+
+
+def test_60_measure_spectrum_defaults_to_every_channel_the_stream_covers() -> None:
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(samples=1024, n_channels=2)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="usrp", driver=driver)
+    sdr.start(channels=("0", "1"))
+
+    measurement = sdr.measure_spectrum(n_samples=1024)
+
+    assert {c.split(".")[1] for c in measurement.channel_data} == {"rx0", "rx1"}
+
+
+def test_61_an_explicit_channel_still_narrows_a_stream_block() -> None:
+    """Narrowing stays available; a stream block is consumed whole, so the rest is the caller's call."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(samples=8, n_channels=2)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="usrp", driver=driver)
+    sdr.start(channels=("0", "1"))
+
+    measurement = sdr.measure_iq(n_samples=8, channels=("1",))
+
+    assert set(measurement.channel_data) == {"usrp.rx1.i", "usrp.rx1.q"}
+
+
+def test_62_without_a_stream_the_default_is_the_first_receive_path() -> None:
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.read_iq.return_value = _capture(samples=8)
+    sdr = InstroSDR(name="rtl", driver=driver)
+
+    sdr.measure_iq(n_samples=8)
+
+    driver.read_iq.assert_called_once_with(8, channels=("0",))
