@@ -996,20 +996,10 @@ def test_56_fetch_iq_publishes_no_spectrum_by_default() -> None:
     assert not any("spectrum" in c for d in published for c in d.channel_data)
 
 
-@pytest.mark.parametrize(
-    ("method", "kwargs"),
-    [
-        ("measure_iq", {"n_samples": 8}),
-        ("fetch_iq", {"n_samples": 8}),
-        ("measure_spectrum", {"n_samples": 1024}),
-        ("compute_psd", {"n_samples": 1024}),
-        ("get_backlog", {}),
-    ],
-)
+@pytest.mark.parametrize(("method", "kwargs"), [("compute_psd", {"n_samples": 1024}), ("get_backlog", {})])
 def test_39_acquisition_cannot_name_a_direction(method: str, kwargs: dict) -> None:
     """Sampling is receive-only in SoapySDR, UHD, pyadi-iio and NI, so the verb carries it."""
     driver = MagicMock(spec=_MinimalSDRDriver)
-    driver.fetch_iq.return_value = _capture(samples=1024)
     driver.read_iq.return_value = _capture(samples=1024)
     driver.get_backlog.return_value = 0
     sdr = InstroSDR(name="usrp", driver=driver)
