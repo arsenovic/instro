@@ -642,7 +642,7 @@ def test_33_measure_iq_publishes_every_channel_on_one_timebase() -> None:
     assert measurement.channel_data["usrp.rx0.i"] == [1.0, 2.0]
     assert measurement.channel_data["usrp.rx1.i"] == [3.0, 4.0]
     assert len(measurement.timestamps) == 2  # one vector shared by every channel
-    driver.read_iq.assert_called_once_with(2, direction=Direction.RX, channels=("0", "1"))
+    driver.read_iq.assert_called_once_with(2, channels=("0", "1"))
 
 
 def test_34_spectrum_uses_each_channel_own_centre_frequency() -> None:
@@ -679,7 +679,7 @@ def test_35_a_stream_covers_a_channel_set_not_a_single_channel() -> None:
 
     driver.start.assert_called_once_with(direction=Direction.RX, channels=("0", "1"))
     # fetch and stop address the stream, which already knows its channels.
-    driver.fetch_iq.assert_called_once_with(4, direction=Direction.RX)
+    driver.fetch_iq.assert_called_once_with(4)
     assert set(measurement.channel_data) == {"usrp.rx0.i", "usrp.rx0.q", "usrp.rx1.i", "usrp.rx1.q"}
 
     sdr.stop()
@@ -713,7 +713,7 @@ def test_37_measure_iq_during_a_stream_comes_off_the_stream() -> None:
     sdr.start()
     sdr.measure_iq(n_samples=8)
 
-    driver.fetch_iq.assert_called_once_with(8, direction=Direction.RX)
+    driver.fetch_iq.assert_called_once_with(8)
     driver.read_iq.assert_not_called()
 
 
@@ -725,22 +725,7 @@ def test_38_measure_iq_without_a_stream_reads_the_device() -> None:
 
     sdr.measure_iq(n_samples=8)
 
-    driver.read_iq.assert_called_once_with(8, direction=Direction.RX, channels=("0",))
-    driver.fetch_iq.assert_not_called()
-
-
-def test_39_routing_is_per_direction() -> None:
-    """A receive stream must not divert a transmit-side read."""
-    driver = MagicMock(spec=_MinimalSDRDriver)
-    driver.read_iq.return_value = _capture(samples=8)
-    driver.fetch_iq.return_value = _capture(samples=8)
-    driver.get_backlog.return_value = 0
-    sdr = InstroSDR(name="usrp", driver=driver)
-
-    sdr.start(direction=Direction.RX)
-    sdr.measure_iq(n_samples=8, direction=Direction.TX)
-
-    driver.read_iq.assert_called_once_with(8, direction=Direction.TX, channels=("0",))
+    driver.read_iq.assert_called_once_with(8, channels=("0",))
     driver.fetch_iq.assert_not_called()
 
 
@@ -1009,3 +994,48 @@ def test_56_fetch_iq_publishes_no_spectrum_by_default() -> None:
     sdr.fetch_iq(n_samples=1024)
 
     assert not any("spectrum" in c for d in published for c in d.channel_data)
+
+
+@pytest.mark.parametrize(
+    ("method", "kwargs"),
+    [
+        ("measure_iq", {"n_samples": 8}),
+        ("fetch_iq", {"n_samples": 8}),
+        ("measure_spectrum", {"n_samples": 1024}),
+        ("compute_psd", {"n_samples": 1024}),
+        ("get_backlog", {}),
+    ],
+)
+def test_39_acquisition_cannot_name_a_direction(method: str, kwargs: dict) -> None:
+    """Sampling is receive-only in SoapySDR, UHD, pyadi-iio and NI, so the verb carries it."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.fetch_iq.return_value = _capture(samples=1024)
+    driver.read_iq.return_value = _capture(samples=1024)
+    driver.get_backlog.return_value = 0
+    sdr = InstroSDR(name="usrp", driver=driver)
+
+    with pytest.raises(TypeError, match="direction"):
+        getattr(sdr, method)(direction=Direction.TX, **kwargs)
+
+
+def test_57_configuration_still_addresses_both_directions() -> None:
+    """A transmitter's tuned frequency is a real reading, unlike a transmit-side IQ block."""
+    driver = MagicMock(spec=_MinimalSDRDriver)
+    driver.get_center_freq.return_value = 2.4e9
+    sdr = InstroSDR(name="usrp", driver=driver)
+
+    measurement = sdr.get_center_freq(direction=Direction.TX, channel="1")
+
+    driver.get_center_freq.assert_called_once_with(direction=Direction.TX, channel="1")
+    assert measurement.channel_data == {"usrp.tx1.center_freq": [2.4e9]}
+
+
+def test_58_published_acquisition_channels_stay_on_the_receive_path() -> None:
+    """Dropping the parameter must not change how channels are named."""
+    sdr = InstroSDR(name="rtl", driver=_MinimalSDRDriver())
+
+    iq = sdr.measure_iq(n_samples=8)
+    spectrum = sdr.measure_spectrum(n_samples=1024)
+
+    assert set(iq.channel_data) == {"rtl.rx0.i", "rtl.rx0.q"}
+    assert all(c.startswith("rtl.rx0.spectrum.") for c in spectrum.channel_data)

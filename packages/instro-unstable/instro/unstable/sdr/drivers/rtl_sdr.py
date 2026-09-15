@@ -105,13 +105,11 @@ class RTLSDR(SDRDriverBase):
     def get_num_channels(self, *, direction: Direction = Direction.RX) -> int:
         return 1 if direction is Direction.RX else 0
 
-    def read_iq(
-        self, n_samples: int, *, direction: Direction = Direction.RX, channels: Sequence[str] = ("0",)
-    ) -> IQCapture:
+    def read_iq(self, n_samples: int, *, channels: Sequence[str] = ("0",)) -> IQCapture:
         """Read ``n_samples`` complex IQ pairs from the device."""
         if n_samples <= 0 or n_samples % self.READ_GRANULARITY:
             raise ValueError(f"n_samples must be a positive multiple of {self.READ_GRANULARITY}, got {n_samples}")
-        device = self._require_channels(direction, channels)
+        device = self._require_channels(Direction.RX, channels)
         if self._stream_thread is not None:
             # librtlsdr cannot serve a sync read while its async reader owns the handle.
             raise RuntimeError("RTLSDR is streaming; use fetch_iq() or stop() first")
@@ -160,8 +158,8 @@ class RTLSDR(SDRDriverBase):
             return
         self._stream_thread = None
 
-    def fetch_iq(self, n_samples: int, *, direction: Direction = Direction.RX) -> IQCapture:
-        device = self._require_channels(direction, ("0",))
+    def fetch_iq(self, n_samples: int) -> IQCapture:
+        device = self._require_channels(Direction.RX, ("0",))
         if self._stream_thread is None:
             raise RuntimeError("RTLSDR is not streaming; call start() first")
         if n_samples <= 0:
@@ -179,8 +177,8 @@ class RTLSDR(SDRDriverBase):
 
         return self._capture(device, samples, dropped_samples=dropped)
 
-    def get_backlog(self, *, direction: Direction = Direction.RX) -> int:
-        self._require_channels(direction, ("0",))
+    def get_backlog(self) -> int:
+        self._require_channels(Direction.RX, ("0",))
         with self._stream_lock:
             return self._buffered
 

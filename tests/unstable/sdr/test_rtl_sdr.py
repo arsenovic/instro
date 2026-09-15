@@ -215,7 +215,12 @@ def test_10_rtlsdr_reads_iq_from_a_connected_dongle() -> None:
 
         # Paths this radio does not have are refused, not silently redirected to rx0.
         with pytest.raises(ValueError, match="only rx channel"):
-            sdr.read_iq(1024, direction=Direction.TX)
+            sdr.get_center_freq(direction=Direction.TX)
+        with pytest.raises(ValueError, match="only rx channel"):
+            sdr.read_iq(1024, channels=("1",))
+        # Acquisition is receive-only, so a transmit block cannot even be asked for.
+        with pytest.raises(TypeError):
+            sdr.read_iq(1024, direction=Direction.TX)  # type: ignore[call-arg]
 
         # Streaming: consecutive fetches must be contiguous, not merely adjacent.
         sdr.start()
@@ -247,10 +252,13 @@ def test_13_rtlsdr_rejects_paths_it_does_not_have(direction: Direction, channel:
         driver = RTLSDR(device_index=0)
         driver.open()
 
+        # Config addresses either direction, so the driver has to refuse the ones it lacks.
         with pytest.raises(ValueError, match="only rx channel"):
             driver.get_center_freq(direction=direction, channel=channel)
-        with pytest.raises(ValueError, match="only rx channel"):
-            driver.read_iq(1024, direction=direction, channels=(channel,))
+        # Acquisition is receive-only by signature, so only the channel can be wrong here.
+        if channel != "0":
+            with pytest.raises(ValueError, match="only rx channel"):
+                driver.read_iq(1024, channels=(channel,))
         device.read_samples.assert_not_called()
     finally:
         patcher.stop()

@@ -339,7 +339,7 @@ Required methods are abstract; every radio can tune, set a rate, and hand back s
 | `get_center_freq` | `(*, direction, channel) -> float` | Read the tuned frequency |
 | `set_sample_rate` | `(sample_rate_hz: float, *, direction, channel) -> None` | Set the IQ rate |
 | `get_sample_rate` | `(*, direction, channel) -> float` | Read the IQ rate |
-| `read_iq` | `(n_samples: int, *, direction, channels) -> IQCapture` | Return an aligned block with its timebase |
+| `read_iq` | `(n_samples: int, *, channels) -> IQCapture` | Return an aligned receive block with its timebase |
 
 Everything else raises `NotImplementedError` by default. Override only what the hardware
 supports, and leave the rest alone:
@@ -355,8 +355,8 @@ supports, and leave the rest alone:
 | `get_num_channels` | Signal paths per direction; `0` means the radio cannot do it |
 | `get_frequency_range` / `get_sample_rate_range` | Settable limits |
 | `start(direction, channels)` / `stop(direction)` | Begin and end one direction's stream |
-| `fetch_iq(n_samples, direction)` | Next contiguous block across the stream's channels |
-| `get_backlog(direction)` | Samples per channel captured and waiting |
+| `fetch_iq(n_samples)` | Next contiguous block across the receive stream's channels |
+| `get_backlog()` | Samples per channel captured and waiting on the receive stream |
 
 <Note>
 The two tiers are not symmetric by accident. Radios disagree about what "gain" even means:
@@ -399,9 +399,20 @@ returned. An RTL-SDR has no such clock, so its driver leaves it unset.
 
 ### Direction and channel
 
-Every per-path method takes keyword-only `direction` (`Direction.RX` or `Direction.TX`) and
-`channel`, a string identifier. Both default to the first receive path, so a single-channel
-receiver never has to mention them.
+Every per-path **configuration** method takes keyword-only `direction` (`Direction.RX` or
+`Direction.TX`) and `channel`, a string identifier. Both default to the first receive path,
+so a single-channel receiver never has to mention them.
+
+**Acquisition does not take a direction.** `read_iq`, `fetch_iq`, `measure_iq`,
+`measure_spectrum`, `compute_psd` and `get_backlog` are receive-only, because sampling is:
+SoapySDR fixes direction at `setupStream` and `readStream` takes only the handle, UHD splits
+`recv` from `send`, pyadi-iio splits `rx()` from `tx()`, and NI uses different drivers
+entirely for RFSA and RFSG. There is no transmit-side IQ to read, so the verb carries the
+direction and a transmit acquisition is not expressible.
+
+Configuration readback on a transmit path is a different thing and remains useful:
+`get_center_freq(direction=Direction.TX)` publishes on `tx0.center_freq`. What a transmitter
+is tuned to is a real measurement; a transmit-side IQ block is not.
 
 `channel` is a string rather than an index because the APIs this contract has to sit over
 disagree: SoapySDR uses integer indices, UHD names antennas (`"RX2"`), and NI-RFSA uses port
@@ -456,7 +467,7 @@ class RTLSDR(SDRDriverBase):
 
     # ... remaining accessors follow the same shape ...
 
-    def read_iq(self, n_samples: int, *, direction=Direction.RX, channels=("0",)) -> IQCapture:
+    def read_iq(self, n_samples: int, *, channels=("0",)) -> IQCapture:
         if n_samples <= 0 or n_samples % self.READ_GRANULARITY:
             raise ValueError(f"n_samples must be a positive multiple of {self.READ_GRANULARITY}")
         device = self._require_device()

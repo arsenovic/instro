@@ -118,10 +118,8 @@ class SDRDriverBase(abc.ABC):
         """Get the sample rate in samples per second."""
 
     @abc.abstractmethod
-    def read_iq(
-        self, n_samples: int, *, direction: Direction = Direction.RX, channels: Sequence[str] = ("0",)
-    ) -> IQCapture:
-        """Read one time-aligned block across ``channels``, with the timebase it was taken on."""
+    def read_iq(self, n_samples: int, *, channels: Sequence[str] = ("0",)) -> IQCapture:
+        """Read one time-aligned receive block across ``channels``, with the timebase it was taken on."""
 
     # --- Optional: gain ---
 
@@ -190,17 +188,17 @@ class SDRDriverBase(abc.ABC):
         """End this direction's stream and release its buffers."""
         raise NotImplementedError("Streaming has not been implemented for this driver")
 
-    def fetch_iq(self, n_samples: int, *, direction: Direction = Direction.RX) -> IQCapture:
-        """Block until ``n_samples`` are available on the running stream, then return them.
+    def fetch_iq(self, n_samples: int) -> IQCapture:
+        """Block until ``n_samples`` are available on the receive stream, then return them.
 
         Covers every channel the stream was started with. Unlike ``read_iq``, consecutive
-        fetches are contiguous: nothing is lost between them. Set ``overflow`` on the
-        capture when the device dropped samples first.
+        fetches are contiguous: nothing is lost between them. Set ``dropped_samples`` on the
+        capture when the device lost some first.
         """
         raise NotImplementedError("Streaming has not been implemented for this driver")
 
-    def get_backlog(self, *, direction: Direction = Direction.RX) -> int:
-        """Samples per channel already captured and waiting to be fetched."""
+    def get_backlog(self) -> int:
+        """Samples per channel already captured and waiting to be fetched from the receive stream."""
         raise NotImplementedError("Streaming has not been implemented for this driver")
 
     # --- Optional: capability discovery ---
@@ -277,38 +275,42 @@ class InstroSDR(Instrument):
         self._last_iq_timestamp = timestamps[-1]
         return timestamps
 
-    def _iq_channel_data(self, capture: IQCapture, direction: Direction) -> dict[str, list[float]]:
+    @staticmethod
+    def _reject_direction(kwargs: dict[str, Any]) -> None:
+        """Extra kwargs become tags, so a stray direction= would be silently ignored rather than refused."""
+        if "direction" in kwargs:
+            raise TypeError("acquisition is receive-only; drop direction= (a transmit path has no IQ to read)")
+
+    def _iq_channel_data(self, capture: IQCapture) -> dict[str, list[float]]:
         """Paired ``.i``/``.q`` channels for every row of a capture."""
         data: dict[str, list[float]] = {}
         for row, channel in enumerate(capture.channels):
-            path = self._path(direction, channel)
+            path = self._path(Direction.RX, channel)
             data[f"{self.name}.{path}.i"] = capture.samples[row].real.tolist()
             data[f"{self.name}.{path}.q"] = capture.samples[row].imag.tolist()
         return data
 
-    def _report_stream_health(self, capture: IQCapture, backlog: int, direction: Direction, timestamp: int) -> None:
+    def _report_stream_health(self, capture: IQCapture, backlog: int, timestamp: int) -> None:
         """Publish backlog and overflow for a block that came off a stream."""
         if capture.overflow:
-            logger.warning("SDR '%s' dropped samples on %s before this block", self.name, direction.value)
-        self._publish_stream_health(backlog, capture.overflow, self._path(direction, capture.channels[0]), timestamp)
+            logger.warning("SDR '%s' dropped samples before this block", self.name)
+        self._publish_stream_health(backlog, capture.overflow, self._path(Direction.RX, capture.channels[0]), timestamp)
 
-    def _read_iq_block(
-        self, n_samples: int, direction: Direction, channels: Sequence[str]
-    ) -> tuple[IQCapture, list[int]] | None:
+    def _read_iq_block(self, n_samples: int, channels: Sequence[str]) -> tuple[IQCapture, list[int]] | None:
         """Acquire one capture and resolve its timestamps. Publishes stream health when routed."""
         if n_samples <= 0:
             raise ValueError(f"n_samples must be positive, got {n_samples}")
 
         backlog: int | None = None
         with self._resource_lock:
-            if direction in self._streams:
+            if Direction.RX in self._streams:
                 # Reading the device directly here would race the stream's own reader, so the
                 # block comes off the stream and stays contiguous with surrounding fetches.
-                capture = self._driver.fetch_iq(n_samples, direction=direction).select(channels)
+                capture = self._driver.fetch_iq(n_samples).select(channels)
                 t_read_ns = time.time_ns()
-                backlog = self._driver.get_backlog(direction=direction)
+                backlog = self._driver.get_backlog()
             else:
-                capture = self._driver.read_iq(n_samples, direction=direction, channels=tuple(channels))
+                capture = self._driver.read_iq(n_samples, channels=tuple(channels))
                 t_read_ns = time.time_ns()
             if capture.samples.size == 0:
                 return None
@@ -316,30 +318,26 @@ class InstroSDR(Instrument):
 
         # A read that consumed from a stream owes the same health report a fetch gives.
         if backlog is not None:
-            self._report_stream_health(capture, backlog, direction, timestamps[-1])
+            self._report_stream_health(capture, backlog, timestamps[-1])
         return capture, timestamps
 
     @publish_measurement
     def measure_iq(
-        self,
-        n_samples: int = 1024,
-        *,
-        direction: Direction = Direction.RX,
-        channels: Sequence[str] = ("0",),
-        **kwargs: Any,
+        self, n_samples: int = 1024, *, channels: Sequence[str] = ("0",), **kwargs: Any
     ) -> Measurement | None:
         """Return one time-aligned IQ block across ``channels`` as paired ``.i``/``.q`` channels.
 
         Every channel shares one timestamp vector, so a multi-channel radio's rows stay
         aligned in the published data.
         """
-        block = self._read_iq_block(n_samples, direction, channels)
+        self._reject_direction(kwargs)
+        block = self._read_iq_block(n_samples, channels)
         if block is None:
             return None
         capture, timestamps = block
 
         return Measurement(
-            channel_data=dict(self._iq_channel_data(capture, direction)),
+            channel_data=dict(self._iq_channel_data(capture)),
             timestamps=timestamps,
             tags={**self.default_tags, **kwargs},
         )
@@ -363,18 +361,16 @@ class InstroSDR(Instrument):
             self._driver.start(direction=direction, channels=tuple(channels))
             self._streams[direction] = tuple(channels)
         if background:
-            self._define_background_daemon(direction, n_samples, publish_spectrum)
+            self._define_background_daemon(n_samples, publish_spectrum)
             super().start()
 
-    def _define_background_daemon(self, direction: Direction, n_samples: int, publish_spectrum: bool) -> None:
+    def _define_background_daemon(self, n_samples: int, publish_spectrum: bool) -> None:
         """Register the blocking fetch that paces the daemon, as InstroDAQ does for hardware timing."""
         # fetch_iq blocks until the radio has the samples, so it times the loop itself; any
         # interval here would sit between blocks and leave gaps in an otherwise gapless stream.
         self._background_config.interval = 0
         self._background_methods = [entry for entry in self._background_methods if entry[0] != self.fetch_iq]
-        self.add_background_daemon_function(
-            self.fetch_iq, n_samples=n_samples, direction=direction, publish_spectrum=publish_spectrum
-        )
+        self.add_background_daemon_function(self.fetch_iq, n_samples=n_samples, publish_spectrum=publish_spectrum)
 
     @property
     def background_interval(self) -> float:
@@ -416,46 +412,40 @@ class InstroSDR(Instrument):
         )
 
     @publish_measurement
-    def fetch_iq(
-        self,
-        n_samples: int = 1024,
-        *,
-        direction: Direction = Direction.RX,
-        publish_spectrum: bool = False,
-        **kwargs: Any,
-    ) -> Measurement | None:
+    def fetch_iq(self, n_samples: int = 1024, *, publish_spectrum: bool = False, **kwargs: Any) -> Measurement | None:
         """Return the next contiguous block from the running stream on ``direction``.
 
         Covers every channel the stream was started with. Unlike ``measure_iq``, nothing is
         lost between consecutive calls unless the device reports an overflow, which
         publishes on the ``overflow`` channel.
         """
+        self._reject_direction(kwargs)
         if n_samples <= 0:
             raise ValueError(f"n_samples must be positive, got {n_samples}")
 
         with self._resource_lock:
-            capture = self._driver.fetch_iq(n_samples, direction=direction)
+            capture = self._driver.fetch_iq(n_samples)
             t_read_ns = time.time_ns()
             if capture.samples.size == 0:
                 return None
             timestamps = self._iq_timestamps(capture, t_read_ns)
-            backlog = self._driver.get_backlog(direction=direction)
+            backlog = self._driver.get_backlog()
 
-        self._report_stream_health(capture, backlog, direction, timestamps[-1])
+        self._report_stream_health(capture, backlog, timestamps[-1])
         if publish_spectrum:
             # Derived from this block, so the spectrum costs an FFT rather than another block.
-            self._publish_spectrum_features(capture, direction, timestamps[-1])
+            self._publish_spectrum_features(capture, timestamps[-1])
 
         return Measurement(
-            channel_data=dict(self._iq_channel_data(capture, direction)),
+            channel_data=dict(self._iq_channel_data(capture)),
             timestamps=timestamps,
             tags={**self.default_tags, **kwargs},
         )
 
-    def get_backlog(self, *, direction: Direction = Direction.RX) -> int:
-        """Samples per channel waiting on the running stream."""
+    def get_backlog(self) -> int:
+        """Samples per channel waiting on the receive stream."""
         with self._resource_lock:
-            return self._driver.get_backlog(direction=direction)
+            return self._driver.get_backlog()
 
     def is_streaming(self, *, direction: Direction = Direction.RX) -> bool:
         """Whether a stream is running on ``direction``."""
@@ -484,11 +474,9 @@ class InstroSDR(Instrument):
         high = min(int(np.searchsorted(cumulative, 1.0 - tail)), len(freqs) - 1)
         return float(freqs[high] - freqs[low])
 
-    def compute_psd(
-        self, n_samples: int = 1024, *, direction: Direction = Direction.RX, channel: str = "0"
-    ) -> tuple[np.ndarray, np.ndarray] | None:
+    def compute_psd(self, n_samples: int = 1024, *, channel: str = "0") -> tuple[np.ndarray, np.ndarray] | None:
         """Acquire a block and return one channel's ``(frequencies_hz, power_db)``. Publishes nothing."""
-        block = self._read_iq_block(n_samples, direction, (channel,))
+        block = self._read_iq_block(n_samples, (channel,))
         if block is None:
             return None
         freqs, psd = self._psd_from_capture(block[0], channel)
@@ -496,33 +484,29 @@ class InstroSDR(Instrument):
 
     @publish_measurement
     def measure_spectrum(
-        self,
-        n_samples: int = 1024,
-        *,
-        direction: Direction = Direction.RX,
-        channels: Sequence[str] = ("0",),
-        **kwargs: Any,
+        self, n_samples: int = 1024, *, channels: Sequence[str] = ("0",), **kwargs: Any
     ) -> Measurement | None:
         """Publish scalar spectrum features per channel; use ``compute_psd`` for the array."""
-        block = self._read_iq_block(n_samples, direction, channels)
+        self._reject_direction(kwargs)
+        block = self._read_iq_block(n_samples, channels)
         if block is None:
             return None
         capture, timestamps = block
 
         return Measurement(
-            channel_data=dict(self._spectrum_channel_data(capture, direction)),
+            channel_data=dict(self._spectrum_channel_data(capture)),
             timestamps=[timestamps[-1]],
             tags={**self.default_tags, **kwargs},
         )
 
-    def _spectrum_channel_data(self, capture: IQCapture, direction: Direction) -> dict[str, list[float]]:
+    def _spectrum_channel_data(self, capture: IQCapture) -> dict[str, list[float]]:
         """The four scalar spectrum features, per channel of a capture."""
         floor = np.finfo(float).tiny
         data: dict[str, list[float]] = {}
         for channel in capture.channels:
             freqs, psd = self._psd_from_capture(capture, channel)
             peak = int(np.argmax(psd))
-            path = f"{self.name}.{self._path(direction, channel)}.spectrum"
+            path = f"{self.name}.{self._path(Direction.RX, channel)}.spectrum"
             data[f"{path}.peak_power_db"] = [float(10.0 * np.log10(max(psd[peak], floor)))]
             data[f"{path}.peak_freq_hz"] = [float(freqs[peak])]
             data[f"{path}.mean_power_db"] = [float(10.0 * np.log10(max(psd.mean(), floor)))]
@@ -530,10 +514,10 @@ class InstroSDR(Instrument):
         return data
 
     @publish_measurement
-    def _publish_spectrum_features(self, capture: IQCapture, direction: Direction, timestamp: int) -> Measurement:
+    def _publish_spectrum_features(self, capture: IQCapture, timestamp: int) -> Measurement:
         """Publish spectrum features for a block that was already fetched, without consuming another."""
         return Measurement(
-            channel_data=dict(self._spectrum_channel_data(capture, direction)),
+            channel_data=dict(self._spectrum_channel_data(capture)),
             timestamps=[timestamp],
             tags={**self.default_tags},
         )
