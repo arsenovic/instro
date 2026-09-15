@@ -256,10 +256,10 @@ class InstroSDR(Instrument):
             # Backstamp: the read returned after the samples were taken. Buffered samples
             # continue the previous timeline
             t0 = t_read_ns - int(offsets[-1])
-            if self._last_iq_timestamp is not None and t0 <= self._last_iq_timestamp:
-                # Buffered samples continue the previous timeline, offset by whatever the
-                # stream dropped, so a dropout is a gap of its true width rather than hidden.
-                t0 = self._last_iq_timestamp + round((capture.dropped_samples + 1) * period_ns)
+            if self._last_iq_timestamp is not None:
+                # Unconditional floor: a dropout keeps its true width even when the clock ran ahead.
+                continued = self._last_iq_timestamp + round((capture.dropped_samples + 1) * period_ns)
+                t0 = max(t0, continued)
 
         timestamps: list[int] = (t0 + offsets).tolist()
         self._last_iq_timestamp = timestamps[-1]
