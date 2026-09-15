@@ -275,12 +275,6 @@ class InstroSDR(Instrument):
         self._last_iq_timestamp = timestamps[-1]
         return timestamps
 
-    @staticmethod
-    def _reject_direction(kwargs: dict[str, Any]) -> None:
-        """Extra kwargs become tags, so a stray direction= would be silently ignored rather than refused."""
-        if "direction" in kwargs:
-            raise TypeError("acquisition is receive-only; drop direction= (a transmit path has no IQ to read)")
-
     def _iq_channel_data(self, capture: IQCapture) -> dict[str, list[float]]:
         """Paired ``.i``/``.q`` channels for every row of a capture."""
         data: dict[str, list[float]] = {}
@@ -330,7 +324,6 @@ class InstroSDR(Instrument):
         Every channel shares one timestamp vector, so a multi-channel radio's rows stay
         aligned in the published data.
         """
-        self._reject_direction(kwargs)
         block = self._read_iq_block(n_samples, channels)
         if block is None:
             return None
@@ -419,7 +412,6 @@ class InstroSDR(Instrument):
         lost between consecutive calls unless the device reports an overflow, which
         publishes on the ``overflow`` channel.
         """
-        self._reject_direction(kwargs)
         if n_samples <= 0:
             raise ValueError(f"n_samples must be positive, got {n_samples}")
 
@@ -487,7 +479,6 @@ class InstroSDR(Instrument):
         self, n_samples: int = 1024, *, channels: Sequence[str] = ("0",), **kwargs: Any
     ) -> Measurement | None:
         """Publish scalar spectrum features per channel; use ``compute_psd`` for the array."""
-        self._reject_direction(kwargs)
         block = self._read_iq_block(n_samples, channels)
         if block is None:
             return None
