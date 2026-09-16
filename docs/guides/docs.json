@@ -21,23 +21,7 @@
             "pages": [
               "instrumentation/quickstart",
               "instrumentation/installation",
-              "instrumentation/supported-instruments",
               "instrumentation/cli"
-            ]
-          },
-          {
-            "group": "Concepts",
-            "icon": "book-open",
-            "root": "instrumentation/concepts",
-            "expanded": true,
-            "pages": [
-              "instrumentation/library",
-              "instrumentation/publishers",
-              "instrumentation/protocols/overview",
-              "instrumentation/transports/overview",
-              "instrumentation/exceptions",
-              "instrumentation/custom-instruments",
-              "instrumentation/contrib"
             ]
           },
           {
@@ -53,6 +37,21 @@
               "instrumentation/daq",
               "instrumentation/awg",
               "instrumentation/flowcontroller"
+            ]
+          },
+          {
+            "group": "Concepts",
+            "icon": "book-open",
+            "root": "instrumentation/concepts",
+            "expanded": true,
+            "pages": [
+              "instrumentation/library",
+              "instrumentation/publishers",
+              "instrumentation/protocols/overview",
+              "instrumentation/transports/overview",
+              "instrumentation/exceptions",
+              "instrumentation/custom-instruments",
+              "instrumentation/contrib"
             ]
           }
         ]
