@@ -22,7 +22,6 @@
               "instrumentation/quickstart",
               "instrumentation/installation",
               "instrumentation/supported-instruments",
-              "instrumentation/using-instro",
               "instrumentation/cli"
             ]
           },
