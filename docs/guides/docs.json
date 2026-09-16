@@ -21,6 +21,7 @@
             "pages": [
               "instrumentation/quickstart",
               "instrumentation/installation",
+              "instrumentation/supported-instruments",
               "instrumentation/using-instro",
               "instrumentation/cli"
             ]
@@ -189,10 +190,6 @@
       {
         "tab": "SDK",
         "href": "https://nominal-io.github.io/instro/"
-      },
-      {
-        "tab": "Changelog",
-        "href": "https://nominal-io.github.io/instro/changelog/"
       },
       {
         "tab": "GitHub",
