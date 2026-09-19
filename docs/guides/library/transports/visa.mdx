@@ -13,9 +13,9 @@ It is intentionally narrow: it opens, closes, and locks a VISA resource and expo
 [VISA (Virtual Instrument Software Architecture)](https://www.ivifoundation.org/specifications/) is the IVI Foundation standard for talking to instruments over GPIB, USB-TMC, TCP/IP (SOCKET, VXI-11, HiSLIP), and RS-232/RS-485. `VisaDriver` uses pyvisa under the hood.
 </Note>
 
-`VisaDriver` addresses GPIB, USB-TMC, TCPIP (SOCKET, VXI-11, HiSLIP), and ASRL (serial) resources. For a comparison against the other transports, see [Transports](/instrumentation/transports/overview).
+`VisaDriver` addresses GPIB, USB-TMC, TCPIP (SOCKET, VXI-11, HiSLIP), and ASRL (serial) resources. For a comparison against the other transports, see [Transports](/library/transports/overview).
 
-To author an instrument driver that composes `VisaDriver`, see the driver-development section of the instrument guide for that category: [power supplies](/instrumentation/psu#custom-driver-development), [electronic loads](/instrumentation/eload#custom-driver-development), [multimeters](/instrumentation/dmm#custom-driver-development), [oscilloscopes](/instrumentation/oscilloscope#custom-driver-development), or [DAQ](/instrumentation/daq#driver-development). This page is the transport reference those guides link back to.
+To author an instrument driver that composes `VisaDriver`, see the driver-development section of the instrument guide for that category: [power supplies](/instruments/psu#custom-driver-development), [electronic loads](/instruments/eload#custom-driver-development), [multimeters](/instruments/dmm#custom-driver-development), [oscilloscopes](/instruments/oscilloscope#custom-driver-development), or [DAQ](/instruments/daq#driver-development). This page is the transport reference those guides link back to.
 
 ## Quickstart
 
@@ -39,12 +39,12 @@ A `VisaDriver` is configured with either a plain VISA resource string (defaults 
 
 ### Lifecycle
 
-`VisaDriver` follows the [standard transport lifecycle](/instrumentation/transports/overview#lifecycle): construct, `open()`, I/O, `close()`, with both `open()` and `close()` idempotent. Two behaviors are specific to VISA:
+`VisaDriver` follows the [standard transport lifecycle](/library/transports/overview#lifecycle): construct, `open()`, I/O, `close()`, with both `open()` and `close()` idempotent. Two behaviors are specific to VISA:
 
 - **`open()` applies the resource configuration.** It opens the pyvisa `ResourceManager` and the resource, then applies terminators, timeouts, and (for ASRL resources) serial settings.
 - **The `ResourceManager` is shared process-wide.** pyvisa caches one per backend across every driver in the process, so `close()` closes this driver's resource and leaves the manager open for other drivers. pyvisa closes it through its own `atexit` handler.
 
-[Locking](/instrumentation/transports/overview#atomic-multi-step-sequences) and [shared ownership](/instrumentation/transports/overview#shared-ownership) work the same for `VisaDriver` as for any transport.
+[Locking](/library/transports/overview#atomic-multi-step-sequences) and [shared ownership](/library/transports/overview#shared-ownership) work the same for `VisaDriver` as for any transport.
 
 ### Terminators
 
@@ -189,8 +189,8 @@ print(rm.list_resources())
 |--------|---------|
 | `VisaDriver(visa_resource)` | Construct a driver from a VISA resource string or a `VisaConfig`. No I/O yet. |
 | `is_open` | Property: `True` if the underlying VISA resource is open. |
-| `open(holder=None)` | Open the resource manager and resource; apply terminator/timeout/serial config. Idempotent. Pass a holder to register shared ownership: returns `True` if `holder` is the first owner. See [Shared ownership](/instrumentation/transports/overview#shared-ownership). |
-| `close(holder=None)` | Close the resource and resource manager. Idempotent. Bare `close()` declines and logs a warning if another driver still holds the connection. With a holder, removes that owner; the close that empties the owner list tears the connection down. Raises `UnknownHolderError` if an unrecognized holder closes while others still own the connection. See [Shared ownership](/instrumentation/transports/overview#shared-ownership). |
+| `open(holder=None)` | Open the resource manager and resource; apply terminator/timeout/serial config. Idempotent. Pass a holder to register shared ownership: returns `True` if `holder` is the first owner. See [Shared ownership](/library/transports/overview#shared-ownership). |
+| `close(holder=None)` | Close the resource and resource manager. Idempotent. Bare `close()` declines and logs a warning if another driver still holds the connection. With a holder, removes that owner; the close that empties the owner list tears the connection down. Raises `UnknownHolderError` if an unrecognized holder closes while others still own the connection. See [Shared ownership](/library/transports/overview#shared-ownership). |
 | `write(command)` | Write a text command; the configured write terminator is appended. |
 | `read()` | Read a single response string up to (and stripping) the read terminator. |
 | `query(command)` | Write a command and read the response as text. |

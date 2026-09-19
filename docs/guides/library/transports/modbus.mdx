@@ -15,9 +15,9 @@ Modbus is a register-and-coil protocol. A driver reads and writes numbered 16-bi
 
 ## When to reach for it
 
-The Modbus transports address Modbus TCP and RTU (serial) devices, exposing raw function-code ops plus a typed codec. Reach for one when the register map is fixed in code, or when you want a standalone client addressing registers by number. For a comparison against the other transports, see [Transports](/instrumentation/transports/overview).
+The Modbus transports address Modbus TCP and RTU (serial) devices, exposing raw function-code ops plus a typed codec. Reach for one when the register map is fixed in code, or when you want a standalone client addressing registers by number. For a comparison against the other transports, see [Transports](/library/transports/overview).
 
-For a config-driven device where the register map lives in a JSON file rather than driver code, use [`ModbusDevice`](/instrumentation/protocols/modbus) instead. `ModbusDevice` composes a Modbus transport and adds semantic access by register alias, scaling, validation, and background polling.
+For a config-driven device where the register map lives in a JSON file rather than driver code, use [`ModbusDevice`](/library/protocols/modbus) instead. `ModbusDevice` composes a Modbus transport and adds semantic access by register alias, scaling, validation, and background polling.
 
 ## Quickstart
 
@@ -103,7 +103,7 @@ Four rules the typed path enforces:
 
 ## Atomic multi-step sequences
 
-Hold the [transport lock](/instrumentation/transports/overview#atomic-multi-step-sequences) across several ops to keep them atomic, for example selecting a page or bank register and then reading from it:
+Hold the [transport lock](/library/transports/overview#atomic-multi-step-sequences) across several ops to keep them atomic, for example selecting a page or bank register and then reading from it:
 
 ```python
 with modbus.lock():
@@ -132,9 +132,9 @@ modbus.close(flow_meter)    # connection stays open: level_sensor still holds it
 modbus.close(level_sensor)  # last owner leaves: connection tears down
 ```
 
-The valid `unit_id` range is 0 to 255 on `ModbusTCPTransport` and 0 to 247 on `ModbusRTUTransport` (Modbus over Serial Line reserves 248-255, so a real RTU/ASCII slave will never have one of those addresses); `check_unit_id()` validates an address against the transport's range up front. This is the same shared-ownership mechanism described in [Transports: shared ownership](/instrumentation/transports/overview#shared-ownership), applied to one line instead of one device with two categories.
+The valid `unit_id` range is 0 to 255 on `ModbusTCPTransport` and 0 to 247 on `ModbusRTUTransport` (Modbus over Serial Line reserves 248-255, so a real RTU/ASCII slave will never have one of those addresses); `check_unit_id()` validates an address against the transport's range up front. This is the same shared-ownership mechanism described in [Transports: shared ownership](/library/transports/overview#shared-ownership), applied to one line instead of one device with two categories.
 
-For config-driven devices, [`ModbusDevice`](/instrumentation/protocols/modbus) wraps this pattern: pass the same transport to several devices, each with its own `unit_id`.
+For config-driven devices, [`ModbusDevice`](/library/protocols/modbus) wraps this pattern: pass the same transport to several devices, each with its own `unit_id`.
 
 ## Configuration
 
@@ -167,8 +167,8 @@ Neither transport carries a unit address: every I/O method takes `unit_id` as a 
 | `ModbusTCPTransport(host, port=502, timeout=3.0)` / `ModbusRTUTransport(port, ..., framer="rtu")` | Construct the transport. No I/O yet. |
 | `check_unit_id(unit_id)` | Validate a unit address against the transport's range (0-255 for TCP, 0-247 for RTU) and return it. |
 | `is_open` | Property: `True` once opened and not closed. Stays `True` across a dropped socket, which the next op reconnects. |
-| `open(holder=None)` | Connect. Idempotent. See [Lifecycle](/instrumentation/transports/overview#lifecycle). |
-| `close(holder=None)` | Disconnect. See [Shared ownership](/instrumentation/transports/overview#shared-ownership). |
+| `open(holder=None)` | Connect. Idempotent. See [Lifecycle](/library/transports/overview#lifecycle). |
+| `close(holder=None)` | Disconnect. See [Shared ownership](/library/transports/overview#shared-ownership). |
 | `lock()` | The reentrant lock, for atomic multi-step sequences. |
 | `read_holding_registers(address, count, *, unit_id)` | FC03. Returns `list[int]`. |
 | `read_input_registers(address, count, *, unit_id)` | FC04. Returns `list[int]`. |

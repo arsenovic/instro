@@ -179,7 +179,7 @@ finally:
 
 ## Examples
 
-All measurement methods return [`Measurement`](/instrumentation/library#measurement) objects. This is common amongst all `Instrument` objects.
+All measurement methods return [`Measurement`](/library/library#measurement) objects. This is common amongst all `Instrument` objects.
 
 ### Basic Usage
 
@@ -296,7 +296,7 @@ The default polling interval is 1 second, configurable via the `background_inter
 * To define your own background daemon, call `define_background_daemon(method, *args, **kwargs)`, which replaces the registered daemon functions.
 * To add a method to the background daemon stack, call `add_background_daemon_function()`.
 
-See [Two ways to get data](/instrumentation/overview#two-ways-to-get-data) for more information regarding background fetching of measurements.
+See [Two ways to get data](/overview/using-instro#two-ways-to-get-data) for more information regarding background fetching of measurements.
 
 <Note>
 **Important Note about Publishers**
@@ -310,7 +310,7 @@ Therefore the background daemon, when calling these instrument methods, is publi
 
 ## Published channels
 
-Every measurement/command call produces a channel keyed under `{name}.{descriptor}`, where `{name}` is the constructor argument and `{descriptor}` is the row below. Substitute `{N}` with the actual channel number (`1`, `2`, …). If you need the pre-v1.0 channel names instead, pass [`legacy_naming=True`](/instrumentation/library#backwards-compatible-channel-naming-legacy_naming) to the constructor.
+Every measurement/command call produces a channel keyed under `{name}.{descriptor}`, where `{name}` is the constructor argument and `{descriptor}` is the row below. Substitute `{N}` with the actual channel number (`1`, `2`, …). If you need the pre-v1.0 channel names instead, pass [`legacy_naming=True`](/library/library#backwards-compatible-channel-naming-legacy_naming) to the constructor.
 
 | Method | Descriptor | Type |
 |--------|------------|------|
@@ -425,7 +425,7 @@ Concrete drivers should hide transport details behind private attributes. For VI
 
 `VisaDriver` owns the resource lock. Concurrent `write` / `query` calls against the same driver are serialized automatically.
 
-See the [VisaDriver guide](/instrumentation/transports/visa) for the full transport reference, covering configuration, terminators, timeouts, serial settings, and the raw-byte I/O path.
+See the [VisaDriver guide](/library/transports/visa) for the full transport reference, covering configuration, terminators, timeouts, serial settings, and the raw-byte I/O path.
 
 For non-VISA instruments, follow the same shape with the protocol client your driver needs:
 

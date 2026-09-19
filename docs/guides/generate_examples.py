@@ -1,12 +1,12 @@
 """Generate Mintlify example pages from ../examples/ and refresh docs.json nav.
 
 Walks every ``*.py`` under ``examples/`` (relative to the repo root), writes a
-matching ``.mdx`` page under ``docs/guides/instrumentation/examples/``, and
-rewrites the "Examples" tab in ``docs/guides/docs.json``.
+matching ``.mdx`` page under ``docs/guides/examples/``, and rewrites the
+"Examples" tab in ``docs/guides/docs.json``.
 
 Also walks ``examples/`` directories inside ``packages/instro-unstable/`` and
-emits pages under ``instrumentation/examples/unstable/``, each with a warning
-callout that the API is not stable.
+emits pages under ``examples/unstable/``, each with a warning callout that the
+API is not stable.
 
 Run via ``just gen-examples``.
 """
@@ -22,10 +22,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent.parent
 EXAMPLES_SRC = REPO_ROOT / "examples"
 UNSTABLE_SRC = REPO_ROOT / "packages" / "instro-unstable" / "instro" / "unstable"
-EXAMPLES_OUT = SCRIPT_DIR / "instrumentation" / "examples"
+EXAMPLES_OUT = SCRIPT_DIR / "examples"
 DOCS_JSON = SCRIPT_DIR / "docs.json"
 
-NAV_PREFIX = "instrumentation/examples"
+NAV_PREFIX = "examples"
+OVERVIEW_PAGE = "examples"  # docs/guides/examples.mdx, hand-authored, sibling of EXAMPLES_OUT
 
 CATEGORY_TITLES: "OrderedDict[str, str]" = OrderedDict(
     [
@@ -132,7 +133,7 @@ def build_groups(
         g.get("group", ""): [p for p in g.get("pages", []) if isinstance(p, str)] for g in existing_groups
     }
 
-    groups: list[dict] = [{"group": "Overview", "pages": [NAV_PREFIX]}]
+    groups: list[dict] = [{"group": "Overview", "pages": [OVERVIEW_PAGE]}]
     remaining = dict(categories)
     for folder, title in CATEGORY_TITLES.items():
         pages = remaining.pop(folder, None)

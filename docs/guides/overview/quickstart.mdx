@@ -52,7 +52,7 @@ description: Drive a simulated power supply end-to-end in about five minutes. No
   </Step>
 
   <Step title="Make Measurements">
-    Measurement getters return a [Measurement](/instrumentation/library#measurements-and-commands) object. Use `.latest` to grab the current value. Every measurement is timestamped, tagged, and streamed to the [Publishers](/instrumentation/publishers).
+    Measurement getters return a [Measurement](/library/library#measurements-and-commands) object. Use `.latest` to grab the current value. Every measurement is timestamped, tagged, and streamed to the [Publishers](/library/publishers).
 
     ```python
     voltage = psu.get_voltage(channel=1)
@@ -82,7 +82,7 @@ description: Drive a simulated power supply end-to-end in about five minutes. No
 </Steps>
 
 <Columns cols={3}>
-  <Card title="Installation" icon="download" href="/instrumentation/installation"> </Card>
-  <Card title="Examples" icon="code" href="/instrumentation/examples"> </Card>
-  <Card title="Supported Instruments" icon="microchip" href="/instrumentation/supported-instruments"> </Card>
+  <Card title="Installation" icon="download" href="/overview/installation"> </Card>
+  <Card title="Examples" icon="code" href="/examples"> </Card>
+  <Card title="Supported Instruments" icon="microchip" href="/instruments/supported-instruments"> </Card>
 </Columns>

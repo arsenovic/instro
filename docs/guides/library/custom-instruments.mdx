@@ -8,11 +8,11 @@ description: Build your own instrument type by subclassing `Instrument`
 
 This page covers building an entirely new instrument type using `Instrument`. If your instrument already fits one of the supported types but your specific vendor or model is not listed, see the custom driver development guide for that instrument type:
 
-- [Power Supplies](/instrumentation/psu#custom-driver-development)
-- [Electronic Loads](/instrumentation/eload#custom-driver-development)
-- [Digital Multimeters](/instrumentation/dmm#custom-driver-development)
-- [Data Acquisition](/instrumentation/daq#driver-development)
-- [I2C](/instrumentation/protocols/i2c/overview#driver-development)
+- [Power Supplies](/instruments/psu#custom-driver-development)
+- [Electronic Loads](/instruments/eload#custom-driver-development)
+- [Digital Multimeters](/instruments/dmm#custom-driver-development)
+- [Data Acquisition](/instruments/daq#driver-development)
+- [I2C](/library/protocols/i2c/overview#driver-development)
 </Tip>
 
 # Custom Instrumentation
@@ -145,7 +145,7 @@ Both `controller.temperature_c` (telemetry) and `controller.setpoint_c.cmd` (com
 
 ### Patterns to copy
 
-- **Channel naming.** Writes get a trailing `.cmd` (e.g. `"setpoint_c.cmd"`); reads do not, whatever the value's type (e.g. `"temperature_c"` for a numeric reading, `"operating_mode"` for a categorical one). The `_package_*` helpers prepend `{self.name}.` so multiple instances stay namespaced. See [Backwards-compatible channel naming](/instrumentation/library#backwards-compatible-channel-naming-legacy_naming) for the full convention.
+- **Channel naming.** Writes get a trailing `.cmd` (e.g. `"setpoint_c.cmd"`); reads do not, whatever the value's type (e.g. `"temperature_c"` for a numeric reading, `"operating_mode"` for a categorical one). The `_package_*` helpers prepend `{self.name}.` so multiple instances stay namespaced. See [Backwards-compatible channel naming](/library/library#backwards-compatible-channel-naming-legacy_naming) for the full convention.
 - **One type per channel.** A given channel's value is always numeric or always a string across its lifetime, never both — publishing a `bool`/`float` to a channel that has ever carried a `str` (or vice versa) is a bug in the calling instrument, not something `_package_measurement` checks for you.
 - **Pass `.value`, not the enum member, for a categorical read.** `@publish_measurement` raises `TypeError` if a returned `Measurement`'s single-value channel holds anything other than `int`/`float`/`str` — so `self._package_measurement(channel, some_enum_member.value, timestamp)`, not `some_enum_member`. This catches a forgotten `.value` at the call site.
 - **Lifecycle.** `open()` / `close()` bracket the device connection. `start()` / `stop()` bracket the background daemon. `close()` calls `stop()` internally and also tears down attached publishers, so a single `try / finally` around `close()` is enough to clean up everything. `Instrument` is also a context manager. `with SimpleTempController(name="controller") as controller:` calls `open()` on entry and `close()` on exit, including when an exception escapes the block, which is the pattern the example above uses. Override `open()` / `close()` and you get context-manager support for free, with no need to implement `__enter__` / `__exit__` yourself. For instruments that share a transport between threads (the daemon polling while user code sends commands), also serialize I/O behind a lock. `instro`'s built-in categories (PSU, ELoad, DMM, Modbus, …) all do this.

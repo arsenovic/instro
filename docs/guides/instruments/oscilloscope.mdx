@@ -77,7 +77,7 @@ scope = InstroScope(
 - **`config`**: A `ScopeConfig`, a dict, or a path to a JSON config file, as an alternative to `driver`/`num_channels`. See [From a JSON Config File](#from-a-json-config-file) below.
 - **`publishers`**: Optional list of publishers to attach. Combined with any publishers declared in `config`.
 - **`autostart`**: When `True`, opens the connection and starts background polling immediately. Requires `config` with at least one `measurements` entry, since the daemon has nothing to poll otherwise.
-- **`**kwargs`**: Additional keyword arguments become default tags when using a publisher that supports tags (like `NominalCorePublisher`). Pass [`legacy_naming=True`](/instrumentation/library#backwards-compatible-channel-naming-legacy_naming) here to publish pre-v1.0 channel names.
+- **`**kwargs`**: Additional keyword arguments become default tags when using a publisher that supports tags (like `NominalCorePublisher`). Pass [`legacy_naming=True`](/library/library#backwards-compatible-channel-naming-legacy_naming) here to publish pre-v1.0 channel names.
 
 ### From a JSON Config File
 
@@ -201,7 +201,7 @@ finally:
 
 ## Examples
 
-All measurement methods return [`Measurement`](/instrumentation/library#measurement) objects. This is common amongst all `Instrument` objects.
+All measurement methods return [`Measurement`](/library/library#measurement) objects. This is common amongst all `Instrument` objects.
 
 ### Basic Usage
 
@@ -322,11 +322,11 @@ scope.close()
 `InstroScope` registers no default daemon functions. Register the measurements with `add_background_daemon_function()` before `start()`, or use `define_background_daemon()` to replace the registered set. The default polling interval is 1 second, configurable via `background_interval`.
 </Note>
 
-See [Two ways to get data](/instrumentation/overview#two-ways-to-get-data) for more on background fetching.
+See [Two ways to get data](/overview/using-instro#two-ways-to-get-data) for more on background fetching.
 
 ## Published channels
 
-Every call produces a channel keyed under `{name}.{descriptor}`, where `{name}` is the constructor argument and `{descriptor}` is the row below. Substitute `{N}` with the channel number and `{type}` with the lowercased measurement type (e.g. `vpp`). Pass [`legacy_naming=True`](/instrumentation/library#backwards-compatible-channel-naming-legacy_naming) to the constructor for the pre-v1.0 names.
+Every call produces a channel keyed under `{name}.{descriptor}`, where `{name}` is the constructor argument and `{descriptor}` is the row below. Substitute `{N}` with the channel number and `{type}` with the lowercased measurement type (e.g. `vpp`). Pass [`legacy_naming=True`](/library/library#backwards-compatible-channel-naming-legacy_naming) to the constructor for the pre-v1.0 names.
 
 | Method | Descriptor | Type |
 |--------|------------|------|
@@ -474,9 +474,9 @@ def save_settings(self, name: str, to_instrument: bool = False) -> bytes: ...
 def load_settings(self, name: str, from_instrument: bool = False) -> None: ...
 ```
 
-`setup_measurement(measurement_type, channel)` is an optional override (default no-op). Implement it for instruments that compute measurements during acquisition (e.g. Tektronix), where the measurement slot must exist at trigger time. Raise `NotImplementedError` for `AcquisitionMode` values the scope does not support (e.g. the Keysight 1200X has no `ENVELOPE` mode). See [Exceptions](/instrumentation/exceptions) for unsupported-feature handling.
+`setup_measurement(measurement_type, channel)` is an optional override (default no-op). Implement it for instruments that compute measurements during acquisition (e.g. Tektronix), where the measurement slot must exist at trigger time. Raise `NotImplementedError` for `AcquisitionMode` values the scope does not support (e.g. the Keysight 1200X has no `ENVELOPE` mode). See [Exceptions](/library/exceptions) for unsupported-feature handling.
 
-For VISA-backed drivers, create a `VisaDriver` internally and use `self._visa.write(command)` and `self._visa.query(command)` for all I/O. `VisaDriver` owns the resource lock and serializes concurrent calls. See the [VisaDriver guide](/instrumentation/transports/visa) for the full transport reference.
+For VISA-backed drivers, create a `VisaDriver` internally and use `self._visa.write(command)` and `self._visa.query(command)` for all I/O. `VisaDriver` owns the resource lock and serializes concurrent calls. See the [VisaDriver guide](/library/transports/visa) for the full transport reference.
 
 ## Implementation Example: Keysight 1200 X-Series Driver
 

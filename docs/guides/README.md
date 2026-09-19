@@ -34,5 +34,5 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md). For questions or feedback about the li
 ## Resources
 
 - [instro SDK reference](https://nominal-io.github.io/instro/)
-- [Runnable examples](https://instro.nominal.io/instrumentation/examples)
+- [Runnable examples](https://instro.nominal.io/examples)
 - [Nominal](https://nominal.io)

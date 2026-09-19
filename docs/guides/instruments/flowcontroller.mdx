@@ -75,7 +75,7 @@ Choose the concrete driver that matches the flow controller model, then pass the
 
 ## Examples
 
-All measurement methods return [`Measurement`](/instrumentation/library#measurement) objects. This is common amongst all `Instrument` objects.
+All measurement methods return [`Measurement`](/library/library#measurement) objects. This is common amongst all `Instrument` objects.
 
 ### Basic Usage
 
@@ -210,7 +210,7 @@ The default polling interval is 1 second, the default within the base `Instrumen
 * To define your own background daemon, call `define_background_daemon(method, *args, **kwargs)`, which replaces the registered daemon functions.
 * To add a method to the background daemon stack, call `add_background_daemon_function()`.
 
-See [Two ways to get data](/instrumentation/overview#two-ways-to-get-data) for more information regarding background fetching of measurements.
+See [Two ways to get data](/overview/using-instro#two-ways-to-get-data) for more information regarding background fetching of measurements.
 
 <Note>
 **Important Note about Publishers**
@@ -317,7 +317,7 @@ Concrete drivers should hide transport details behind private attributes. For VI
 
 `VisaDriver` owns the resource lock. Use `with self._visa.lock():` when a sequence of writes and reads must execute atomically.
 
-See the [VisaDriver guide](/instrumentation/transports/visa) for the full transport reference, covering configuration, terminators, timeouts, and serial settings.
+See the [VisaDriver guide](/library/transports/visa) for the full transport reference, covering configuration, terminators, timeouts, and serial settings.
 
 ## Implementation Example: Alicat MC-Series
 

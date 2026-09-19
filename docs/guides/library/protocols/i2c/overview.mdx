@@ -41,7 +41,7 @@ value = i2c.read("gpio_expander", "OUTPUT")
 mode = i2c.read("gpio_expander", "CONFIG", field="mode")
 ```
 
-See the [System Definition](/instrumentation/protocols/i2c/system-definition) page for detailed information on creating and configuring your `SystemDefinition`.
+See the [System Definition](/library/protocols/i2c/system-definition) page for detailed information on creating and configuring your `SystemDefinition`.
 
 <Tip>
 Create your SystemDefinition in a separate file and import it into your test code. This cleanly separates hardware configuration (typically done by a hardware/firmware engineer) from the test and automation logic (usually the test engineer's domain), leading to more maintainable and collaborative code.
@@ -52,7 +52,7 @@ Create your SystemDefinition in a separate file and import it into your test cod
 
 The typical I2CInterface workflow follows this pattern:
 
-1. **Create a `SystemDefinition`** - Define all I2C devices, registers, and commands (see [System Definition](/instrumentation/protocols/i2c/system-definition))
+1. **Create a `SystemDefinition`** - Define all I2C devices, registers, and commands (see [System Definition](/library/protocols/i2c/system-definition))
 2. **Construct `I2CInterface(name, driver=..., system_definition=...)`** - Compose a vendor driver (e.g. `Aardvark`) and pass it directly
 3. **`open()`** - Establish connection to the I2C adapter hardware
 5. **`start()`** - Begins a periodic daemon in the background. (Optional)
@@ -64,7 +64,7 @@ The typical I2CInterface workflow follows this pattern:
 * To define your own background daemon, call `define_background_daemon()`.
 * To add a method to the background daemon stack, call `add_background_daemon_function()`.
 
-See [Two ways to get data](/instrumentation/overview#two-ways-to-get-data) for more information regarding background fetching of measurements.
+See [Two ways to get data](/overview/using-instro#two-ways-to-get-data) for more information regarding background fetching of measurements.
 
 
 <Note>
@@ -123,12 +123,12 @@ i2c = I2CInterface(
 <Warning>
 **SystemDefinition Required**
 
-I2CInterface requires a `SystemDefinition` parameter. You cannot create a I2CInterface instance without first defining your I2C devices. See the [System Definition](/instrumentation/protocols/i2c/system-definition) page for details.
+I2CInterface requires a `SystemDefinition` parameter. You cannot create a I2CInterface instance without first defining your I2C devices. See the [System Definition](/library/protocols/i2c/system-definition) page for details.
 </Warning>
 
 ## Examples
 
-All measurement methods return [`Measurement`](/instrumentation/library#measurement) objects. This is common amongst all `Instrument` objects.
+All measurement methods return [`Measurement`](/library/library#measurement) objects. This is common amongst all `Instrument` objects.
 
 All examples below import from a shared `system_definition.py` file. This follows the recommended practice of separating hardware configuration from test logic.
 
@@ -392,7 +392,7 @@ Every read/write produces a channel keyed under `{name}.{descriptor}`, where `{n
 | `write(peripheral, register_alias, field=..., ...)` | `{peripheral}.{register_alias}.{field}.cmd` | command |
 | `query(peripheral, batch_command)` | `{peripheral}.{batch_command}` | telemetry |
 
-`{peripheral}`, `{register_alias}`, `{field}`, and `{batch_command}` are the names you assigned in your `SystemDefinition`. If you depend on the pre-v1.0 underscore-separator form (e.g. `{name}_{peripheral}_{register}` with a trailing `_cmd`), pass [`legacy_naming=True`](/instrumentation/library#backwards-compatible-channel-naming-legacy_naming) to the constructor.
+`{peripheral}`, `{register_alias}`, `{field}`, and `{batch_command}` are the names you assigned in your `SystemDefinition`. If you depend on the pre-v1.0 underscore-separator form (e.g. `{name}_{peripheral}_{register}` with a trailing `_cmd`), pass [`legacy_naming=True`](/library/library#backwards-compatible-channel-naming-legacy_naming) to the constructor.
 
 ## Method Reference
 

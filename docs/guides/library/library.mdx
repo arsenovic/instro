@@ -15,7 +15,7 @@ This page gives a conceptual overview of how `instro`  is structured.
 
 
 ## Instrument
-[`Instrument`][instrument-link] is the base class for [all instrument types](/instrumentation/supported-instruments). Its responsibilities include:
+[`Instrument`][instrument-link] is the base class for [all instrument types](/instruments/supported-instruments). Its responsibilities include:
 * Creates and holds the communication interface for the instrument.
 * Publishing `Measurements and Commands` to any attached `Publishers`.
 * Handling background daemons for synchronous instrument communication.
@@ -30,7 +30,7 @@ Instrument(
     **kwargs,
 )
 ```
-User defined [custom instruments](/instrumentation/custom-instruments) should subclass [`Instrument`][instrument-link]
+User defined [custom instruments](/library/custom-instruments) should subclass [`Instrument`][instrument-link]
 
 
 ## Measurements and Commands

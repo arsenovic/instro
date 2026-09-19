@@ -648,7 +648,7 @@ flow_meter.close()    # connection stays open: level_sensor still holds it
 level_sensor.close()  # last owner leaves: connection tears down
 ```
 
-The connection opens for the first device and stays open until the last one closes, the same shared-ownership rule every `instro` transport follows. A shared transport requires an explicit `unit_id` per device: two devices silently defaulting to the same address on one line is the failure this guards against. See [Sharing one connection across unit addresses](/instrumentation/transports/modbus#sharing-one-connection-across-unit-addresses) for the transport-level detail.
+The connection opens for the first device and stays open until the last one closes, the same shared-ownership rule every `instro` transport follows. A shared transport requires an explicit `unit_id` per device: two devices silently defaulting to the same address on one line is the failure this guards against. See [Sharing one connection across unit addresses](/library/transports/modbus#sharing-one-connection-across-unit-addresses) for the transport-level detail.
 
 ## Creating a ModbusDevice Instance
 
@@ -732,7 +732,7 @@ device = ModbusDevice(config, connection=transport, unit_id=1, autostart=True)
 The `connection` parameter allows you to separate device-specific register maps from environment-specific connection details. One JSON config can be shared across test benches while each environment passes its own connection.
 </Tip>
 
-Use `add_publisher()` to attach a [publisher](/instrumentation/publishers) for automatic data streaming:
+Use `add_publisher()` to attach a [publisher](/library/publishers) for automatic data streaming:
 
 ```python
 from instro.lib.publishers import NominalCorePublisher
@@ -769,7 +769,7 @@ device.close()
 | `read(alias)` (per bit in a register's `bitmap`) | `{bit.name}` | telemetry |
 | `write(alias, value)` | `{alias}.cmd` | command |
 
-Modbus had no v1.0 channel-naming change. [`legacy_naming`](/instrumentation/library#backwards-compatible-channel-naming-legacy_naming) is accepted but is a no-op for this category.
+Modbus had no v1.0 channel-naming change. [`legacy_naming`](/library/library#backwards-compatible-channel-naming-legacy_naming) is accepted but is a no-op for this category.
 </Note>
 
 ### Background Polling with Publishers

@@ -16,7 +16,7 @@ description: Using InstroPSU for SCPI-based programmable power supplies
 - **TDK Lambda**: Genesys family via SCPI/VISA (`TDKLambdaGenesys`), including white-label Agilent/Keysight N5700-series supplies
 - **Simulated**: `SimulatedPSU` for use with the bundled SCPI simulator
 
-The following vendor is available as a community-contributed driver in `instro-contrib` (install with `instro[contrib]`; see [Contrib drivers](/instrumentation/contrib)):
+The following vendor is available as a community-contributed driver in `instro-contrib` (install with `instro[contrib]`; see [Contrib drivers](/library/contrib)):
 
 - **Matrix**: WPS300S-series single-channel via SCPI/RS-232 (`MatrixWPS300S`)
 
@@ -185,7 +185,7 @@ finally:
 
 ## Examples
 
-All measurement methods return [`Measurement`](/instrumentation/library#measurement) objects. This is common amongst all `Instrument` objects.
+All measurement methods return [`Measurement`](/library/library#measurement) objects. This is common amongst all `Instrument` objects.
 
 ### Basic Usage
 
@@ -301,7 +301,7 @@ The default polling interval is 1 second, configurable via the `background_inter
 * To define your own background daemon, call `define_background_daemon(method, *args, **kwargs)`, which replaces the registered daemon functions.
 * To add a method to the background daemon stack, call `add_background_daemon_function()`.
 
-See [Two ways to get data](/instrumentation/overview#two-ways-to-get-data) for more information regarding background fetching of measurements.
+See [Two ways to get data](/overview/using-instro#two-ways-to-get-data) for more information regarding background fetching of measurements.
 
 <Note>
 **Important Note about Publishers**
@@ -315,7 +315,7 @@ Therefore the background daemon, when calling these instrument methods, is publi
 
 ## Published channels
 
-Every measurement/command call produces a channel keyed under `{name}.{descriptor}`, where `{name}` is the constructor argument and `{descriptor}` is the row below. Substitute `{N}` with the actual channel number (`1`, `2`, …). If you need the pre-v1.0 channel names instead, pass [`legacy_naming=True`](/instrumentation/library#backwards-compatible-channel-naming-legacy_naming) to the constructor.
+Every measurement/command call produces a channel keyed under `{name}.{descriptor}`, where `{name}` is the constructor argument and `{descriptor}` is the row below. Substitute `{N}` with the actual channel number (`1`, `2`, …). If you need the pre-v1.0 channel names instead, pass [`legacy_naming=True`](/library/library#backwards-compatible-channel-naming-legacy_naming) to the constructor.
 
 | Method | Descriptor | Type |
 |--------|------------|------|
@@ -375,7 +375,7 @@ Every measurement/command call produces a channel keyed under `{name}.{descripto
 
 # Simulated Power Supply
 
-For development and testing without physical hardware, Nominal Instrumentation includes a local SCPI power-supply simulator. See [PSU simulator](/instrumentation/psu-simulator) for the quickstart, usage notes, and supported command set.
+For development and testing without physical hardware, Nominal Instrumentation includes a local SCPI power-supply simulator. See [PSU simulator](/instruments/psu-simulator) for the quickstart, usage notes, and supported command set.
 
 ---
 
@@ -482,7 +482,7 @@ def get_remote_sense_enabled(self, channel: int) -> bool:
     """Query and return the remote sense enable status on `channel`."""
 ```
 
-Required output-control and measurement methods on `PSUDriverBase` are declared with `@abc.abstractmethod`. Optional protection and sense methods default to `NotImplementedError`; override the ones the driver implements. See [Exceptions](/instrumentation/exceptions) for unsupported-feature handling.
+Required output-control and measurement methods on `PSUDriverBase` are declared with `@abc.abstractmethod`. Optional protection and sense methods default to `NotImplementedError`; override the ones the driver implements. See [Exceptions](/library/exceptions) for unsupported-feature handling.
 
 ### Talking to the Instrument
 
@@ -493,7 +493,7 @@ Concrete drivers should hide transport details behind private attributes. For VI
 
 `VisaDriver` owns the resource lock. Concurrent `write` / `query` calls against the same driver are serialized automatically. Use `with self._visa.lock():` when a write and its error check need to execute atomically.
 
-See the [VisaDriver guide](/instrumentation/transports/visa) for the full transport reference, covering configuration, terminators, timeouts, serial settings, and the raw-byte I/O path.
+See the [VisaDriver guide](/library/transports/visa) for the full transport reference, covering configuration, terminators, timeouts, serial settings, and the raw-byte I/O path.
 
 For non-VISA instruments, follow the same shape with the protocol client your driver needs. The important part is that the public constructor describes the instrument connection, while the transport object remains an implementation detail.
 

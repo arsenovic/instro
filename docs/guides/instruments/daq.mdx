@@ -62,7 +62,7 @@ InstroDAQ supports three acquisition modes:
 - Data automatically published via the background daemon, OR manually fetch with `read_analog()`
 - Use case: Mid to high frequency continuous monitoring with deterministic sample timing.
 
-Hardware and software timing are mutually exclusive on one instance: configuring the second mode raises `TimingConfigException`. To run both against one device, build a separate `InstroDAQ` per mode with non-overlapping channels: see the [NI hardware- and software-timed example](/instrumentation/examples/daq/daq_hw_and_sw_timed_ni).
+Hardware and software timing are mutually exclusive on one instance: configuring the second mode raises `TimingConfigException`. To run both against one device, build a separate `InstroDAQ` per mode with non-overlapping channels: see the [NI hardware- and software-timed example](/examples/daq/daq_hw_and_sw_timed_ni).
 
 ## Creating an InstroDAQ Instance
 
@@ -408,7 +408,7 @@ Different DAQ devices have different timing capabilities:
 </Warning>
 
 <Note>
-A single `InstroDAQ` instance carries one analog input sample rate. To run multiple NI DAQmx tasks at different hardware sample rates, create one `InstroDAQ` instance per task: see the [NI multi-rate acquisition example](/instrumentation/examples/daq/daq_multi_rate_ni).
+A single `InstroDAQ` instance carries one analog input sample rate. To run multiple NI DAQmx tasks at different hardware sample rates, create one `InstroDAQ` instance per task: see the [NI multi-rate acquisition example](/examples/daq/daq_multi_rate_ni).
 </Note>
 
 ### Software-Timed Sample Rate
@@ -484,10 +484,10 @@ daq.stop()
 daq.close()
 ```
 
-While the daemon is running, `read()` and `read_batch()` serve analog channels from the acquisition the daemon just completed, so the same read code works whether or not the daemon is running. Both block until the next acquisition arrives, so a read returns new samples instead of the last cached value. `read_analog()` raises instead: the daemon owns the hardware reads. Call `get_channel()` to read the channel buffer, which keeps per-channel sample history and the daemon's own timing channels. See the [software-timed example](/instrumentation/examples/daq/daq_read_analog_sw_timed).
+While the daemon is running, `read()` and `read_batch()` serve analog channels from the acquisition the daemon just completed, so the same read code works whether or not the daemon is running. Both block until the next acquisition arrives, so a read returns new samples instead of the last cached value. `read_analog()` raises instead: the daemon owns the hardware reads. Call `get_channel()` to read the channel buffer, which keeps per-channel sample history and the daemon's own timing channels. See the [software-timed example](/examples/daq/daq_read_analog_sw_timed).
 
 ### Hardware-Timed Acquisition with Background Fetching
-See [Two ways to get data](/instrumentation/overview#two-ways-to-get-data) for more information regarding background fetching of measurements.
+See [Two ways to get data](/overview/using-instro#two-ways-to-get-data) for more information regarding background fetching of measurements.
 
 For continuous high-speed acquisition.
 
@@ -827,7 +827,7 @@ daq.close()
 
 ## Published channels
 
-Every measurement/command call produces a channel keyed under `{name}.{descriptor}`, where `{name}` is the constructor argument and `{descriptor}` is the row below. For analog, digital, and relay operations, `{alias}` is the alias you assigned with `configure_*_channel(alias=...)` (or the physical channel name if no alias was provided). If you depended on the pre-v1.0 form for digital channels (bare `{alias}` with no `{name}.` prefix and no `.cmd` suffix), pass [`legacy_naming=True`](/instrumentation/library#backwards-compatible-channel-naming-legacy_naming).
+Every measurement/command call produces a channel keyed under `{name}.{descriptor}`, where `{name}` is the constructor argument and `{descriptor}` is the row below. For analog, digital, and relay operations, `{alias}` is the alias you assigned with `configure_*_channel(alias=...)` (or the physical channel name if no alias was provided). If you depended on the pre-v1.0 form for digital channels (bare `{alias}` with no `{name}.` prefix and no `.cmd` suffix), pass [`legacy_naming=True`](/library/library#backwards-compatible-channel-naming-legacy_naming).
 
 | Method | Descriptor | Type |
 |--------|------------|------|

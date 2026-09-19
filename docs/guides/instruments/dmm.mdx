@@ -12,7 +12,7 @@ description: Using InstroDMM for SCPI-based digital multimeters
 - **Agilent / HP / Keysight**: 34401A and compatible DMMs via SCPI/VISA (`Agilent34401A`)
 - **Keysight**: 34461A Truevolt DMM via SCPI/VISA (`Keysight34461A`)
 - **Keithley**: 2400 SourceMeter, measurement-only mode (`Keithley2400`)
-- **Simulated**: no hardware required; pairs with the bundled [DMM simulator](/instrumentation/dmm-simulator) (`SimulatedDMM`)
+- **Simulated**: no hardware required; pairs with the bundled [DMM simulator](/instruments/dmm-simulator) (`SimulatedDMM`)
 
 If your vendor or model is not listed, see [Custom Driver Development](#custom-driver-development) below.
 
@@ -39,7 +39,7 @@ The typical InstroDMM workflow:
 4. **`read()`**: trigger a measurement and get the value.
 5. **`close()`**: disconnect from hardware.
 
-Optionally, you can use background fetching via `start()` / `stop()`, but it is an atypical use case for a DMM. See [Two ways to get data](/instrumentation/overview#two-ways-to-get-data) for more.
+Optionally, you can use background fetching via `start()` / `stop()`, but it is an atypical use case for a DMM. See [Two ways to get data](/overview/using-instro#two-ways-to-get-data) for more.
 
 ### Measurement Functions
 
@@ -165,7 +165,7 @@ finally:
 
 ## Examples
 
-All measurement methods return [`Measurement`](/instrumentation/library#measurement) objects. This is common amongst all `Instrument` objects.
+All measurement methods return [`Measurement`](/library/library#measurement) objects. This is common amongst all `Instrument` objects.
 
 ### Basic Usage
 
@@ -210,7 +210,7 @@ For example, when you call `read()`, this not only triggers a measurement and re
 
 ## Published channels
 
-Every measurement/command call produces a channel keyed under `{name}.{descriptor}`, where `{name}` is the constructor argument and `{descriptor}` is the row below. The `read()` descriptor depends on the active measurement function. Substitute the lowercased function name (e.g. `dc_voltage`, `ac_voltage`, `two_wire_resistance`). DMM had no v1.0 channel-naming change. [`legacy_naming`](/instrumentation/library#backwards-compatible-channel-naming-legacy_naming) is accepted but is a no-op for this category.
+Every measurement/command call produces a channel keyed under `{name}.{descriptor}`, where `{name}` is the constructor argument and `{descriptor}` is the row below. The `read()` descriptor depends on the active measurement function. Substitute the lowercased function name (e.g. `dc_voltage`, `ac_voltage`, `two_wire_resistance`). DMM had no v1.0 channel-naming change. [`legacy_naming`](/library/library#backwards-compatible-channel-naming-legacy_naming) is accepted but is a no-op for this category.
 
 | Method | Descriptor | Type |
 |--------|------------|------|
@@ -237,7 +237,7 @@ Every measurement/command call produces a channel keyed under `{name}.{descripto
 | `read()` | Trigger a measurement and return a Measurement |
 
 <Note>
-`set_aperture_seconds` is part of the DMM contract but is not implemented by the bundled drivers (Agilent 34401A, Keysight 34461A, Keithley 2400). Calling it on those drivers raises `NotImplementedError`. Use `set_aperture_nplc` to set integration time on the shipped drivers. See [Exceptions](/instrumentation/exceptions) for the distinction between `NotImplementedError` and `FeatureNotSupportedError`.
+`set_aperture_seconds` is part of the DMM contract but is not implemented by the bundled drivers (Agilent 34401A, Keysight 34461A, Keithley 2400). Calling it on those drivers raises `NotImplementedError`. Use `set_aperture_nplc` to set integration time on the shipped drivers. See [Exceptions](/library/exceptions) for the distinction between `NotImplementedError` and `FeatureNotSupportedError`.
 </Note>
 
 ---
@@ -309,7 +309,7 @@ Concrete drivers should hide transport details behind private attributes. For VI
 
 `VisaDriver` owns the resource lock. Concurrent `write` / `query` calls against the same driver are serialized automatically.
 
-See the [VisaDriver guide](/instrumentation/transports/visa) for the full transport reference, covering configuration, terminators, timeouts, serial settings, and the raw-byte I/O path.
+See the [VisaDriver guide](/library/transports/visa) for the full transport reference, covering configuration, terminators, timeouts, serial settings, and the raw-byte I/O path.
 
 For non-VISA instruments, follow the same shape with the protocol client your driver needs. The important part is that the public constructor describes the instrument connection, while the transport object remains an implementation detail.
 

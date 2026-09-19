@@ -7,7 +7,7 @@ description: Run and program the bundled SCPI digital-multimeter simulator
 
 The DMM simulator is a local SCPI server for development, tests, and demos. It listens on a TCP socket and exposes a digital-multimeter command set: function switching plus the five primary measurements (DC/AC voltage, DC/AC current, and two-wire resistance). Each function measures a configurable stimulus value returned with Gaussian noise, so repeated reads look like a real bench instrument.
 
-Unlike the [PSU simulator](/instrumentation/psu-simulator), the DMM simulator is headless: there is no terminal UI. Set stimulus values with CLI flags at startup, or through the Python API when embedding the simulator in tests.
+Unlike the [PSU simulator](/instruments/psu-simulator), the DMM simulator is headless: there is no terminal UI. Set stimulus values with CLI flags at startup, or through the Python API when embedding the simulator in tests.
 
 ## Quickstart
 

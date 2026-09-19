@@ -15,7 +15,7 @@ just test-python / test-rust     # single-language tests
 uv build --wheel --package <name> # build a wheel for a workspace package
 ```
 
-`just check` and `just test` cover local linting and tests. [Build/test CI](./.github/workflows/build-check-test.yml) also checks `uv lock --check` and runs across supported OS/Python combinations. Separate workflows check [generated example/navigation drift](./.github/workflows/docs-check.yml) and [PR titles](./.github/workflows/lint-pr-title.yml). For docs drift, run `just gen-examples` and inspect `git diff -- docs/guides/instrumentation/examples docs/guides/docs.json`. A local pass does not guarantee a full CI pass. The [scheduled latest-dependencies workflow](./.github/workflows/latest-deps-test.yml) re-resolves dependencies and runs Python tests; it is not part of PR CI.
+`just check` and `just test` cover local linting and tests. [Build/test CI](./.github/workflows/build-check-test.yml) also checks `uv lock --check` and runs across supported OS/Python combinations. Separate workflows check [generated example/navigation drift](./.github/workflows/docs-check.yml) and [PR titles](./.github/workflows/lint-pr-title.yml). For docs drift, run `just gen-examples` and inspect `git diff -- docs/guides/examples docs/guides/docs.json`. A local pass does not guarantee a full CI pass. The [scheduled latest-dependencies workflow](./.github/workflows/latest-deps-test.yml) re-resolves dependencies and runs Python tests; it is not part of PR CI.
 
 The default `dev` group in [pyproject.toml](./pyproject.toml) includes the local maturin-built `instro-ethernetip` package, so fresh setup for Python checks/tests also needs Rust and a C/C++ compiler/linker. `just check` and `just test` additionally need CMake and LLVM/libclang for the OPC UA workspace crates. The [justfile](./justfile) uses a separate nightly rustfmt for `check-rust` and `fix-rust`; install it with `rustup toolchain install nightly --profile minimal --component rustfmt`. See [Prerequisites](./CONTRIBUTING.md#prerequisites) for per-OS setup.
 
@@ -72,7 +72,7 @@ Same shape as above, but in `packages/instro-contrib/instro/contrib/<category>/d
 
 The contrib bar is in [CONTRIBUTING.md](./CONTRIBUTING.md#instro-contrib--community-contributed-drivers).
 
-Add the driver to the "Available drivers" section of [`docs/guides/instrumentation/contrib.mdx`](./docs/guides/instrumentation/contrib.mdx) in the same PR. That section is documented as the complete set of contrib drivers for the current release — a merged driver missing from it makes the doc wrong.
+Add the driver to the "Available drivers" section of [`docs/guides/library/contrib.mdx`](./docs/guides/library/contrib.mdx) in the same PR. That section is documented as the complete set of contrib drivers for the current release — a merged driver missing from it makes the doc wrong.
 
 ## Documentation
 
@@ -80,8 +80,8 @@ Docs live in this repo and ship in the same PR as the code change. When a change
 
 | Change type | Files to update |
 |---|---|
-| New vendor driver | `README.md` "Supported devices" table; add a guide page under `docs/guides/instrumentation/` if the device introduces a new user-facing workflow |
-| New contrib driver | "Available drivers" section of `docs/guides/instrumentation/contrib.mdx` |
+| New vendor driver | `README.md` "Supported devices" table; add a guide page under `docs/guides/instruments/` if the device introduces a new user-facing workflow |
+| New contrib driver | "Available drivers" section of `docs/guides/library/contrib.mdx` |
 | Public API change (HAL methods, signatures, return types, new category) | `docs/sdk/src/` (reference docs) and any affected `docs/guides/` examples |
 | New feature, behavior change, or new install extra | `docs/guides/` (Mintlify site); also `README.md` if it touches the quickstart, install instructions, or extras table |
 | New category or top-level module | All of the above plus `docs/guides/docs.json` navigation |

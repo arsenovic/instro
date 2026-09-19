@@ -37,7 +37,7 @@ daq = InstroDAQ(
 # All data automatically streams to Nominal Core
 ```
 
-Every [`Measurement` and `Command`](/instrumentation/library#measurements-and-commands) is now recorded by each [`Publisher`][publisher-link] in `publishers`. An `Instrument` will `close()` all publishers when it closes.
+Every [`Measurement` and `Command`](/library/library#measurements-and-commands) is now recorded by each [`Publisher`][publisher-link] in `publishers`. An `Instrument` will `close()` all publishers when it closes.
 
 
 **Note:** Do not attach the same ordinary [`Publisher`][publisher-link] instance to more than one instrument. Use [`SharedPublisher`](#sharedpublisher) when multiple instruments need to publish to one underlying destination.
@@ -134,7 +134,7 @@ daq = InstroDAQ(
 
 ### NominalConnectPublisher
 
-Streams real-time data to Nominal Connect for live visualization and monitoring during tests that use the Nominal Connect Desktop Application. Nominal Connect apps can also install `instro` for you; see [Using Nominal Connect](/instrumentation/installation#using-nominal-connect).
+Streams real-time data to Nominal Connect for live visualization and monitoring during tests that use the Nominal Connect Desktop Application. Nominal Connect apps can also install `instro` for you; see [Using Nominal Connect](/overview/installation#using-nominal-connect).
 
 **Constructor Parameters:**
 
@@ -197,7 +197,7 @@ class Publisher(Protocol):
         """Called when the owning instrument is closed"""
         ...
 ```
-* `publish`: returns [`Measurements` and `Commands`](/instrumentation/library#measurements-and-commands).
+* `publish`: returns [`Measurements` and `Commands`](/library/library#measurements-and-commands).
 * `close`: release resources owned by the [Publisher][publisher-link]. The parent instrument calls `close()` during teardown.
 
  **Example**
@@ -262,7 +262,7 @@ primary_psu.close()    # Leaves the underlying FilePublisher open.
 secondary_psu.close()  # Closes the underlying FilePublisher.
 ```
 
-See [Publishers: publish shared](/instrumentation/examples/publishers/publish_shared) for a full example.
+See [Publishers: publish shared](/examples/publishers/publish_shared) for a full example.
 
 ### BasicBufferedPublisher
 
