@@ -109,7 +109,7 @@ build:
 
 # build docs
 build-docs:
-    uv run mkdocs build --config-file docs/reference/mkdocs.yml
+    uv run mkdocs build --config-file docs/sdk/mkdocs.yml
 
 # generate Mintlify example pages and refresh docs/guides/docs.json navigation
 gen-examples:

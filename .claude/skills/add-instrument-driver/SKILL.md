@@ -188,7 +188,7 @@ Per `AGENTS.md` "Documentation":
 - **`docs/guides/instrumentation/<category>.mdx`** — add a guide entry only if
   the device introduces a new user-facing workflow.
 - If a new public API/category was introduced (rare for a single driver), update
-  `docs/reference/src/` and `docs/guides/docs.json` navigation too.
+  `docs/sdk/src/` and `docs/guides/docs.json` navigation too.
 - Do **not** hand-edit `CHANGELOG.md` (release-please generates it).
 
 ## Step 8 — Verify

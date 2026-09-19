@@ -4,7 +4,7 @@ repo_name: "nominal-io/instro"
 site_dir: site
 watch: [mkdocs.yml, ../../README.md, ../../CHANGELOG.md, ../../instro, ../../packages]
 copyright: Copyright &copy; Nominal, Inc.
-edit_uri: edit/main/docs/reference/
+edit_uri: edit/main/docs/sdk/
 docs_dir: src
 
 validation:

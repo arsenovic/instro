@@ -47,7 +47,7 @@ The `instro` repository is a shared `uv`/`cargo` workspace. The top-level Python
 - **Scope discipline.** Keep PRs focused on the work at hand. If you find something unrelated, open a separate GitHub issue rather than expanding the PR.
 - **GitHub Actions are SHA-pinned.** Every `uses:` in `.github/workflows/` pins a full commit SHA with the release as a trailing comment (`@11d5960a... # v4.4.0`). Resolve SHAs from the upstream repo's releases — never trust an unverified suggestion. Dependabot bumps the pins weekly.
 - **README links are absolute.** Every README that ships as a package `readme` (root and `packages/*/`) renders on PyPI, where relative `./` paths are dead. Link to `https://github.com/nominal-io/instro/blob/main/...` and load images from `raw.githubusercontent.com`. Package metadata (`keywords`, `classifiers`, `[project.urls]` with Documentation and Changelog) lives in each `pyproject.toml`; keep the sub-packages' blocks in step with the root when you add one (#514).
-- **Docs ship with the code.** This repo contains its own docs (`README.md`, `CONTRIBUTING.md`, `docs/guides/`, `docs/reference/`, and this file). When a change is user-visible or alters conventions, update the relevant docs in the same PR: see [Documentation](#documentation) below.
+- **Docs ship with the code.** This repo contains its own docs (`README.md`, `CONTRIBUTING.md`, `docs/guides/`, `docs/sdk/`, and this file). When a change is user-visible or alters conventions, update the relevant docs in the same PR: see [Documentation](#documentation) below.
 
 ### Naming
 
@@ -82,7 +82,7 @@ Docs live in this repo and ship in the same PR as the code change. When a change
 |---|---|
 | New vendor driver | `README.md` "Supported devices" table; add a guide page under `docs/guides/instrumentation/` if the device introduces a new user-facing workflow |
 | New contrib driver | "Available drivers" section of `docs/guides/instrumentation/contrib.mdx` |
-| Public API change (HAL methods, signatures, return types, new category) | `docs/reference/src/` (reference docs) and any affected `docs/guides/` examples |
+| Public API change (HAL methods, signatures, return types, new category) | `docs/sdk/src/` (reference docs) and any affected `docs/guides/` examples |
 | New feature, behavior change, or new install extra | `docs/guides/` (Mintlify site); also `README.md` if it touches the quickstart, install instructions, or extras table |
 | New category or top-level module | All of the above plus `docs/guides/docs.json` navigation |
 | Contributor workflow, repo convention, or tooling change | `CONTRIBUTING.md` and this file (`AGENTS.md`) |
