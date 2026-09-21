@@ -32,10 +32,10 @@
             "pages": [
               "scope",
               "psu",
-              "eload",
               "dmm",
               "daq",
               "awg",
+              "eload",
               "flowcontroller"
             ]
           },
@@ -60,7 +60,7 @@
         "tab": "Examples",
         "groups": [
           {
-            "group": "Examples",
+            "group": "Contents",
             "pages": [
               "examples",
               "examples/daq/index",
