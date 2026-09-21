@@ -1,19 +1,8 @@
-<Columns cols={2}>
-  <Card title="Allen-Bradley" horizontal href="/library/protocols/ethernetip">
-    <img
-      src="/images/equipment/Allen-Bradley.png"
-      style={{ width: "100%", height: "100px", objectFit: "contain" }}
-      noZoom
-      alt="Allen-Bradley"
-    />
-  </Card>
+import AllenBradley from "/snippets/instruments/ethernet-ip/allen-bradley.mdx";
+import CompactLogix from "/snippets/instruments/ethernet-ip/compactlogix.mdx";
 
-  <Card title="CompactLogix" horizontal href="/library/protocols/ethernetip">
-    <img
-      src="/images/equipment/CompactLogix.png"
-      style={{ width: "100%", height: "100px", objectFit: "contain" }}
-      noZoom
-      alt="CompactLogix"
-    />
-  </Card>
+<Columns cols={2}>
+  <AllenBradley />
+
+  <CompactLogix />
 </Columns>

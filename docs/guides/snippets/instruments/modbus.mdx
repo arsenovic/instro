@@ -1,19 +1,8 @@
-<Columns cols={2}>
-  <Card title="Modbus TCP" horizontal href="/library/protocols/modbus">
-    <img
-      src="/images/equipment/Modbus-TCP.png"
-      style={{ width: "100%", height: "100px", objectFit: "contain" }}
-      noZoom
-      alt="Modbus TCP"
-    />
-  </Card>
+import ModbusTCP from "/snippets/instruments/modbus/modbus-tcp.mdx";
+import ModbusRTU from "/snippets/instruments/modbus/modbus-rtu.mdx";
 
-  <Card title="Modbus RTU" horizontal href="/library/protocols/modbus">
-    <img
-      src="/images/equipment/Modbus-RTU.png"
-      style={{ width: "100%", height: "100px", objectFit: "contain" }}
-      noZoom
-      alt="Modbus RTU"
-    />
-  </Card>
+<Columns cols={2}>
+  <ModbusTCP />
+
+  <ModbusRTU />
 </Columns>
