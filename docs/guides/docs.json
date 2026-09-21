@@ -27,7 +27,7 @@
           {
             "group": "Instruments",
             "icon": "microchip",
-            "root": "supported-instruments",
+            "root": "instruments",
             "expanded": true,
             "pages": [
               "oscilloscope",
