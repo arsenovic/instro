@@ -9,7 +9,7 @@ import ModbusTCP from "/snippets/instruments/modbus/modbus-tcp.mdx";
 
 Modbus TCP is a connection type for [`ModbusDevice`](/library/protocols/modbus), not a separate driver class: set `"transport": "tcp"` in the config's connection block, or pass a `ModbusTCPTransport` explicitly.
 
-## Creating a `ModbusDevice` over TCP
+## Creating a [`ModbusDevice`](https://nominal-io.github.io/instro/protocols/modbus/#modbusdevice) over TCP
 
 ```python
 from instro.modbus import ModbusDevice
