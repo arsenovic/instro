@@ -1,12 +1,19 @@
-"""Generate Mintlify example pages from ../examples/ and refresh docs.json nav.
+"""Generate Mintlify example pages and per-category index pages from ../examples/.
 
 Walks every ``*.py`` under ``examples/`` (relative to the repo root), writes a
-matching ``.mdx`` page under ``docs/guides/examples/``, and rewrites the
-"Examples" tab in ``docs/guides/docs.json``.
+matching ``.mdx`` page under ``docs/guides/examples/``, and writes one
+``index.mdx`` per category folder listing links to that category's pages.
 
 Also walks ``examples/`` directories inside ``packages/instro-unstable/`` and
 emits pages under ``examples/unstable/``, each with a warning callout that the
 API is not stable.
+
+Unlike earlier versions of this script, it does not touch ``docs.json``.
+``docs.json``'s Examples tab has one static entry per category pointing at
+that category's ``index.mdx``; it doesn't change when individual example
+scripts are added, removed, or renamed, so there's nothing for this script to
+regenerate there. Adding or removing a whole category is the one case that
+still needs a manual ``docs.json`` edit.
 
 Run via ``just gen-examples``.
 """
@@ -14,7 +21,6 @@ Run via ``just gen-examples``.
 from __future__ import annotations
 
 import ast
-import json
 from collections import OrderedDict
 from pathlib import Path
 
@@ -23,10 +29,6 @@ REPO_ROOT = SCRIPT_DIR.parent.parent
 EXAMPLES_SRC = REPO_ROOT / "examples"
 UNSTABLE_SRC = REPO_ROOT / "packages" / "instro-unstable" / "instro" / "unstable"
 EXAMPLES_OUT = SCRIPT_DIR / "examples"
-DOCS_JSON = SCRIPT_DIR / "docs.json"
-
-NAV_PREFIX = "examples"
-OVERVIEW_PAGE = "examples"  # docs/guides/examples.mdx, hand-authored, sibling of EXAMPLES_OUT
 
 CATEGORY_TITLES: "OrderedDict[str, str]" = OrderedDict(
     [
@@ -42,7 +44,8 @@ CATEGORY_TITLES: "OrderedDict[str, str]" = OrderedDict(
     ]
 )
 
-ROOT_GROUP_TITLE = "General"
+ROOT_CATEGORY = "general"
+ROOT_CATEGORY_TITLE = "General"
 
 _UNSTABLE_WARNING = """\
 <Warning>
@@ -50,6 +53,10 @@ _UNSTABLE_WARNING = """\
 </Warning>
 
 """
+
+
+def category_title(folder: str) -> str:
+    return CATEGORY_TITLES.get(folder, folder.replace("_", " ").title())
 
 
 def extract_title(py_path: Path) -> str:
@@ -72,6 +79,14 @@ def write_mdx(py_path: Path, out_path: Path, *, unstable: bool = False) -> None:
     out_path.write_text(f'---\ntitle: "{title}"\n---\n\n{warning}```python {py_path.name}\n{body}```\n')
 
 
+def write_index(index_path: Path, title: str, entries: list[tuple[str, str]]) -> None:
+    """entries: (page_title, nav_path) pairs, already in display order."""
+    lines = [f'---\ntitle: "{title}"\n---\n\n']
+    lines += [f"- [{entry_title}](/{nav_path})\n" for entry_title, nav_path in entries]
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_path.write_text("".join(lines))
+
+
 def clean_output_dir(output_path: Path) -> None:
     if not output_path.exists():
         return
@@ -85,115 +100,50 @@ def clean_output_dir(output_path: Path) -> None:
             d.rmdir()
 
 
-def discover() -> "tuple[OrderedDict[str, list[str]], list[str]]":
-    categories: "OrderedDict[str, list[str]]" = OrderedDict()
-    root_files: list[str] = []
-    for py_path in sorted(EXAMPLES_SRC.rglob("*.py")):
-        rel = py_path.relative_to(EXAMPLES_SRC)
-        nav_path = f"{NAV_PREFIX}/{rel.with_suffix('').as_posix()}"
-        if len(rel.parts) == 1:
-            root_files.append(nav_path)
-        else:
-            categories.setdefault(rel.parts[0], []).append(nav_path)
-    return categories, root_files
-
-
-def discover_unstable() -> "OrderedDict[str, list[str]]":
-    categories: "OrderedDict[str, list[str]]" = OrderedDict()
-    if not UNSTABLE_SRC.exists():
-        return categories
-    for py_path in sorted(UNSTABLE_SRC.rglob("examples/*.py")):
-        category = py_path.parent.parent.name
-        nav_path = f"{NAV_PREFIX}/unstable/{category}/{py_path.stem}"
-        categories.setdefault(category, []).append(nav_path)
-    return categories
-
-
-def reorder_by_existing(pages: list[str], existing: list[str]) -> list[str]:
-    page_set = set(pages)
-    kept = [p for p in existing if p in page_set]
-    new = sorted(p for p in pages if p not in set(kept))
-    return kept + new
-
-
-def existing_examples_groups(docs: dict) -> list[dict]:
-    for tab in docs["navigation"]["tabs"]:
-        if tab.get("tab") == "Examples":
-            return tab.get("groups", [])
-    return []
-
-
-def build_groups(
-    categories: "OrderedDict[str, list[str]]",
-    root_files: list[str],
-    unstable_categories: "OrderedDict[str, list[str]]",
-    existing_groups: list[dict],
-) -> list[dict]:
-    prior_pages: dict[str, list[str]] = {
-        g.get("group", ""): [p for p in g.get("pages", []) if isinstance(p, str)] for g in existing_groups
-    }
-
-    groups: list[dict] = [{"group": "Overview", "pages": [OVERVIEW_PAGE]}]
-    remaining = dict(categories)
-    for folder, title in CATEGORY_TITLES.items():
-        pages = remaining.pop(folder, None)
-        if pages:
-            groups.append({"group": title, "pages": reorder_by_existing(pages, prior_pages.get(title, []))})
-    for folder, pages in remaining.items():
-        title = folder.replace("_", " ").title()
-        groups.append({"group": title, "pages": reorder_by_existing(pages, prior_pages.get(title, []))})
-    if root_files:
-        groups.append(
-            {
-                "group": ROOT_GROUP_TITLE,
-                "pages": reorder_by_existing(root_files, prior_pages.get(ROOT_GROUP_TITLE, [])),
-            }
-        )
-    for folder, pages in unstable_categories.items():
-        group_title = f"{folder.replace('_', ' ').title()} (Unstable)"
-        groups.append({"group": group_title, "pages": reorder_by_existing(pages, prior_pages.get(group_title, []))})
-    return groups
-
-
-def update_docs_json(
-    categories: "OrderedDict[str, list[str]]",
-    root_files: list[str],
-    unstable_categories: "OrderedDict[str, list[str]]",
-) -> None:
-    docs = json.loads(DOCS_JSON.read_text())
-    groups = build_groups(categories, root_files, unstable_categories, existing_examples_groups(docs))
-    tabs = docs["navigation"]["tabs"]
-    for tab in tabs:
-        if tab.get("tab") == "Examples":
-            tab["groups"] = groups
-            break
-    else:
-        tabs.append({"tab": "Examples", "groups": groups})
-    DOCS_JSON.write_text(json.dumps(docs, indent=2) + "\n")
-
-
 def main(output_path: Path) -> None:
     clean_output_dir(output_path)
+
+    categories: "OrderedDict[str, list[tuple[str, str]]]" = OrderedDict()
+    root_entries: list[tuple[str, str]] = []
+
     for py_path in sorted(EXAMPLES_SRC.rglob("*.py")):
         rel = py_path.relative_to(EXAMPLES_SRC)
+        nav_path = f"examples/{rel.with_suffix('').as_posix()}"
         out_path = (output_path / rel).with_suffix(".mdx")
         write_mdx(py_path, out_path)
-        try:
-            print(f"wrote {out_path.relative_to(SCRIPT_DIR)}")
-        except ValueError as e:
-            print(f"wrote {out_path}")
+        print(f"wrote {out_path.relative_to(SCRIPT_DIR)}")
+
+        title = extract_title(py_path)
+        if len(rel.parts) == 1:
+            root_entries.append((title, nav_path))
+        else:
+            categories.setdefault(rel.parts[0], []).append((title, nav_path))
+
+    unstable_categories: "OrderedDict[str, list[tuple[str, str]]]" = OrderedDict()
     for py_path in sorted(UNSTABLE_SRC.rglob("examples/*.py")):
         category = py_path.parent.parent.name
+        nav_path = f"examples/unstable/{category}/{py_path.stem}"
         out_path = output_path / "unstable" / category / py_path.with_suffix(".mdx").name
         write_mdx(py_path, out_path, unstable=True)
-        try:
-            print(f"wrote {out_path.relative_to(SCRIPT_DIR)}")
-        except ValueError as e:
-            print(f"wrote {out_path}")
-    categories, root_files = discover()
-    unstable_categories = discover_unstable()
-    update_docs_json(categories, root_files, unstable_categories)
-    print(f"updated {DOCS_JSON.relative_to(SCRIPT_DIR)}")
+        print(f"wrote {out_path.relative_to(SCRIPT_DIR)}")
+
+        title = extract_title(py_path)
+        unstable_categories.setdefault(category, []).append((title, nav_path))
+
+    for folder, entries in categories.items():
+        index_path = output_path / folder / "index.mdx"
+        write_index(index_path, category_title(folder), entries)
+        print(f"wrote {index_path.relative_to(SCRIPT_DIR)}")
+
+    if root_entries:
+        index_path = output_path / ROOT_CATEGORY / "index.mdx"
+        write_index(index_path, ROOT_CATEGORY_TITLE, root_entries)
+        print(f"wrote {index_path.relative_to(SCRIPT_DIR)}")
+
+    for folder, entries in unstable_categories.items():
+        index_path = output_path / "unstable" / folder / "index.mdx"
+        write_index(index_path, f"{category_title(folder)} (Unstable)", entries)
+        print(f"wrote {index_path.relative_to(SCRIPT_DIR)}")
 
 
 if __name__ == "__main__":

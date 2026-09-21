@@ -111,7 +111,7 @@ build:
 build-docs:
     uv run mkdocs build --config-file docs/sdk/mkdocs.yml
 
-# generate Mintlify example pages and refresh docs/guides/docs.json navigation
+# generate Mintlify example pages and per-category index pages from examples/
 gen-examples:
     uv run python docs/guides/generate_examples.py
 
