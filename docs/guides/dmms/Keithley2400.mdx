@@ -1,0 +1,24 @@
+---
+title: Keithley2400
+description: A driver for [`InstroDMM`](/dmm)
+---
+
+import Keithley2400 from "/snippets/instruments/digital-multimeters/keithley-2400.mdx";
+
+<Keithley2400 />
+
+The `Keithley2400` provides a driver that can be used to instantiate an instance of [InstroDMM](/dmm), in measurement-only mode.
+
+## Creating an [`InstroDMM`](/dmm) with `Keithley2400`
+
+```python
+from instro.dmm.drivers import Keithley2400
+from instro.dmm import InstroDMM
+
+dmm = InstroDMM(
+    name="myDMM",
+    driver=Keithley2400("<visa_resource>"),
+)
+```
+
+Parameters and methods specific to [`Keithley2400`](https://nominal-io.github.io/instro/instruments/dmm/#keithley-2400) can be found in the [SDK](https://nominal-io.github.io/instro/).

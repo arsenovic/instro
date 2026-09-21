@@ -1,0 +1,24 @@
+---
+title: Keysight34461A
+description: A driver for [`InstroDMM`](/dmm)
+---
+
+import Keysight34461A from "/snippets/instruments/digital-multimeters/keysight-34461a.mdx";
+
+<Keysight34461A />
+
+The `Keysight34461A` provides a driver that can be used to instantiate an instance of [InstroDMM](/dmm).
+
+## Creating an [`InstroDMM`](/dmm) with `Keysight34461A`
+
+```python
+from instro.dmm.drivers import Keysight34461A
+from instro.dmm import InstroDMM
+
+dmm = InstroDMM(
+    name="myDMM",
+    driver=Keysight34461A("<visa_resource>"),
+)
+```
+
+Parameters and methods specific to [`Keysight34461A`](https://nominal-io.github.io/instro/instruments/dmm/#keysight-34461a) can be found in the [SDK](https://nominal-io.github.io/instro/).
