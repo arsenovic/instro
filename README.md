@@ -101,7 +101,7 @@ Available packages:
 
 See [Installation](https://instro.nominal.io/overview/installation) for more info.
 
-## [Supported devices](https://instro.nominal.io/instruments/supported-instruments)
+## [Supported devices](https://instro.nominal.io/supported-instruments)
 
 <!-- --8<-- [start:supported-devices] -->
 | Category | Class | Vendors |
@@ -119,7 +119,7 @@ See [Installation](https://instro.nominal.io/overview/installation) for more inf
 | EtherNet/IP | `EtherNetIPDevice` | Allen-Bradley / CompactLogix-class PLCs |
 <!-- --8<-- [end:supported-devices] -->
 
-See [Supported devices](https://instro.nominal.io/instruments/supported-instruments) for more info.
+See [Supported devices](https://instro.nominal.io/supported-instruments) for more info.
 
 ## [Contributing](https://github.com/nominal-io/instro/blob/main/CONTRIBUTING.md)
 

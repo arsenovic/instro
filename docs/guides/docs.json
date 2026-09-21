@@ -27,16 +27,16 @@
           {
             "group": "Instruments",
             "icon": "microchip",
-            "root": "instruments/supported-instruments",
+            "root": "supported-instruments",
             "expanded": true,
             "pages": [
-              "instruments/oscilloscope",
-              "instruments/psu",
-              "instruments/eload",
-              "instruments/dmm",
-              "instruments/daq",
-              "instruments/awg",
-              "instruments/flowcontroller"
+              "oscilloscope",
+              "psu",
+              "eload",
+              "dmm",
+              "daq",
+              "awg",
+              "flowcontroller"
             ]
           },
           {

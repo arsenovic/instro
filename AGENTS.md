@@ -80,7 +80,7 @@ Docs live in this repo and ship in the same PR as the code change. When a change
 
 | Change type | Files to update |
 |---|---|
-| New vendor driver | `README.md` "Supported devices" table; add a guide page under `docs/guides/instruments/` if the device introduces a new user-facing workflow |
+| New vendor driver | `README.md` "Supported devices" table; add a guide page under `docs/guides/` if the device introduces a new user-facing workflow |
 | New contrib driver | "Available drivers" section of `docs/guides/library/contrib.mdx` |
 | Public API change (HAL methods, signatures, return types, new category) | `docs/sdk/src/` (reference docs) and any affected `docs/guides/` examples |
 | New feature, behavior change, or new install extra | `docs/guides/` (Mintlify site); also `README.md` if it touches the quickstart, install instructions, or extras table |
