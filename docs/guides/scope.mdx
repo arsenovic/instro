@@ -4,6 +4,7 @@ description:   Instrument for all oscilloscopes
 ---
 
 import Oscilloscopes from "/snippets/drivers/scope.mdx";
+import Example from "/examples/scope/scope_basic.mdx";
 
 `InstroScope`  provides a unified interface all oscilloscopes. This class is initialized with a vender-specfic driver (`Keysight1200X`,` Tektronix2SeriesMSO`,...), and provides the vendor-agnostic API (`set_vertical_scale`, `fetch_waveform`, `measure`, `set_trigger_level`, …).  
 
@@ -30,6 +31,8 @@ If your vendor or model is not listed, see [Custom Driver Development](./library
 
 ## Example
  More examples found in [Examples](examples/scope/index)
+
+<Example />
 
 ## Details 
 
