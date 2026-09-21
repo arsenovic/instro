@@ -60,92 +60,22 @@
         "tab": "Examples",
         "groups": [
           {
-            "group": "Overview",
+            "group": "Examples",
             "pages": [
-              "examples"
-            ]
-          },
-          {
-            "group": "DAQ",
-            "pages": [
-              "examples/daq/index"
-            ]
-          },
-          {
-            "group": "DMM",
-            "pages": [
-              "examples/dmm/index"
-            ]
-          },
-          {
-            "group": "PSU",
-            "pages": [
-              "examples/psu/index"
-            ]
-          },
-          {
-            "group": "Electronic Load",
-            "pages": [
-              "examples/eload/index"
-            ]
-          },
-          {
-            "group": "I2C",
-            "pages": [
-              "examples/i2c/index"
-            ]
-          },
-          {
-            "group": "Publishers",
-            "pages": [
-              "examples/publishers/index"
-            ]
-          },
-          {
-            "group": "Modbus",
-            "pages": [
-              "examples/modbus/index"
-            ]
-          },
-          {
-            "group": "EtherNet/IP",
-            "pages": [
-              "examples/ethernetip/index"
-            ]
-          },
-          {
-            "group": "Test Rack",
-            "pages": [
-              "examples/test_rack_example/index"
-            ]
-          },
-          {
-            "group": "Custom",
-            "pages": [
-              "examples/custom/index"
-            ]
-          },
-          {
-            "group": "Scope",
-            "pages": [
-              "examples/scope/index"
-            ]
-          },
-          {
-            "group": "Vna",
-            "pages": [
-              "examples/vna/index"
-            ]
-          },
-          {
-            "group": "Flowcontroller (Unstable)",
-            "pages": [
-              "examples/unstable/flowcontroller/index"
-            ]
-          },
-          {
-            "group": "Motorcontroller (Unstable)",
-            "pages": [
+              "examples",
+              "examples/daq/index",
+              "examples/dmm/index",
+              "examples/psu/index",
+              "examples/eload/index",
+              "examples/i2c/index",
+              "examples/publishers/index",
+              "examples/modbus/index",
+              "examples/ethernetip/index",
+              "examples/test_rack_example/index",
+              "examples/custom/index",
+              "examples/scope/index",
+              "examples/vna/index",
+              "examples/unstable/flowcontroller/index",
               "examples/unstable/motorcontroller/index"
             ]
           }
