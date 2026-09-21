@@ -3,20 +3,9 @@ title: NIDAQDriver
 description: A driver for [`InstroDAQ`](/daq)
 ---
 
-import NationalInstruments from "/snippets/instruments/data-acquisition/national-instruments.mdx";
+import Card from "/snippets/instruments/data-acquisition/national-instruments/card.mdx";
+import DriverPage from "/snippets/instruments/data-acquisition/national-instruments/driver-page.mdx";
 
-<NationalInstruments />
+<Card />
 
-The [`NIDAQDriver`](https://nominal-io.github.io/instro/instruments/daq/#ni-daqmx) provides a driver that can be used to instantiate an [InstroDAQ](/daq).
-
-## Creating an [`InstroDAQ`](/daq) with [`NIDAQDriver`](https://nominal-io.github.io/instro/instruments/daq/#ni-daqmx)
-
-```python
-from instro.daq import InstroDAQ
-from instro.daq.drivers.ni import NIDAQDriver
-
-# device name from NI-MAX
-daq = InstroDAQ(name="niDAQ", driver=NIDAQDriver(device_id="Dev1"))
-```
-
-Parameters and methods specific to [`NIDAQDriver`](https://nominal-io.github.io/instro/instruments/daq/#ni-daqmx) can be found in the [SDK](https://nominal-io.github.io/instro/).
+<DriverPage />

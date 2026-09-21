@@ -3,23 +3,9 @@ title: TDKLambdaGenesys
 description: A driver for [`InstroPSU`](/psu)
 ---
 
-import TDKLambdaGenesys from "/snippets/instruments/power-supplies/tdk-lambda-genesys.mdx";
+import Card from "/snippets/instruments/power-supplies/tdk-lambda-genesys/card.mdx";
+import DriverPage from "/snippets/instruments/power-supplies/tdk-lambda-genesys/driver-page.mdx";
 
-<TDKLambdaGenesys />
+<Card />
 
-The [`TDKLambdaGenesys`](https://nominal-io.github.io/instro/instruments/psu/#tdk-lambda-genesys) provides a driver that can be used to instantiate an [InstroPSU](/psu). It also covers white-label Agilent/Keysight N5700-series supplies, which speak the same command set.
-
-## Creating an [`InstroPSU`](/psu) with [`TDKLambdaGenesys`](https://nominal-io.github.io/instro/instruments/psu/#tdk-lambda-genesys)
-
-```python
-from instro.psu.drivers import TDKLambdaGenesys
-from instro.psu import InstroPSU
-
-psu = InstroPSU(
-    name="myPSU",
-    driver=TDKLambdaGenesys(visa_resource="USB0::..."),
-    num_channels=1,
-)
-```
-
-Parameters and methods specific to [`TDKLambdaGenesys`](https://nominal-io.github.io/instro/instruments/psu/#tdk-lambda-genesys) can be found in the [SDK](https://nominal-io.github.io/instro/).
+<DriverPage />
