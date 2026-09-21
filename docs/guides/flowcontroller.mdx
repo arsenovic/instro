@@ -5,18 +5,35 @@ description: Using InstroFlowController for gas flow controllers
 
 <Warning>This Instrument category is new and is currently available only in the Unstable package</Warning>
 
-# InstroFlowController
+import FlowControllers from "/snippets/drivers/flowcontroller.mdx";
 
+`InstroFlowController` provides a unified interface for gas flow controllers. This class is initialized with a vendor-specific driver (`AlicatMC`, …), and provides the vendor-agnostic API (`get_flow_data`, `set_setpoint`, `select_gas`, `tare_flow`, …).
 
-`InstroFlowController` is a hardware abstraction layer (HAL) that provides a unified interface for InstroFlowMeter. The category class defines the vendor-independent API (`set_voltage`, `get_voltage`, `output_enable`, …). A vendor-specific driver (e.g. `BK9115`, `KeysightE36100`, `TDKLambdaGenesys`, `RigolDP800`) owns its connection details and translates those calls into vendor commands.
+## Creating an InstroFlowController
+
+```python
+from instro.unstable.flowcontroller.drivers import AlicatMC
+from instro.unstable.flowcontroller import InstroFlowController
+
+fc = InstroFlowController(
+    name="myFlowController",
+    driver=AlicatMC(VisaConfig(visa_resource=VISA_RESOURCE)),
+)
+```
 
 ## Supported Vendors
 
-- **AlicatMC**: Alicat MC-series serial-controlled flow meters
+<FlowControllers />
 
-If your vendor or model is not listed, see [Custom Driver Development](#custom-driver-development) below.
+If your vendor or model is not listed, see [Custom Driver Development](#custom-driver-development) below, or open a [Driver Request](https://github.com/nominal-io/instro/issues) issue on GitHub.
 
-## Key Concepts
+## Example
+
+More examples found in [Examples](examples/unstable/flowcontroller/)
+
+## Details
+
+The following presents details about the `InstroFlowController`. Specific driver details can be found on [their pages](#supported-vendors).
 
 ### Driver Composition
 
@@ -42,215 +59,6 @@ The typical InstroFlowController workflow:
 4. **`start()`**: begins a periodic background daemon. (Optional) By default this calls `get_flow_data` periodically.
 5. **`stop()`**: ends the background daemon (if started).
 6. **`close()`**: disconnects from hardware.
-
-## Creating an InstroFlowController Instance
-
-```python
-from instro.unstable.flowcontroller.drivers import AlicatMC
-from instro.unstable.flowcontroller import InstroFlowController
-
-fc = InstroFlowController(
-    name="myFlowController",
-    driver = AlicatMC(
-        VisaConfig(
-            visa_resource=VISA_RESOURCE,
-            serial_config=SerialConfig(baud_rate=19200),
-            terminator=TerminatorConfig(read="\r", write="\r"),
-        ),
-        device_id="M",
-    ),
-)
-```
-
-### Parameters
-
-- **`name`**: A name for this flow controller instance. Used as a prefix for channel names when publishing.
-- **`driver`**: A concrete `FlowControllerDriverBase` instance (e.g. `AlicatMC`) configured with the connection details for that model.
-- **`publishers`**: Optional list of publishers to attach.
-- **`**kwargs`**: Additional keyword arguments become default tags when using a publisher that supports tags (like `NominalCorePublisher`).
-
-### Choosing a Driver
-
-Choose the concrete driver that matches the flow controller model, then pass the instrument connection settings to that driver. For example, use `AlicatMC` for the Alicat MC-series.
-
-## Examples
-
-All measurement methods return [`Measurement`](/library/library#measurement) objects. This is common amongst all `Instrument` objects.
-
-### Basic Usage
-
-```python
-import time
-
-from instro.unstable.flowcontroller import InstroFlowController
-from instro.unstable.flowcontroller.drivers.alicat_mc import AlicatMC
-from instro.lib.publishers.nominal_core import NominalCorePublisher
-from instro.lib.transports import SerialConfig, TerminatorConfig, VisaConfig
-
-VISA_RESOURCE = "ASRL7::INSTR" #REPLACE WITH YOUR OWN
-ALICAT_DEVICE_ID = "A" #DEFAULT FOR ALICATMC
-
-device = AlicatMC(
-    VisaConfig(
-        visa_resource=VISA_RESOURCE,
-        serial_config=SerialConfig(baud_rate=19200),
-        terminator=TerminatorConfig(read="\r", write="\r"),
-    ),
-    device_id=ALICAT_DEVICE_ID,
-)
-
-fc = InstroFlowController(
-    name="fc",
-    driver=device
-)
-
-
-fc.background_interval = 0.5  # poll the controller for new values every half second.
-fc.open()
-fc.select_gas("N2")  # Nitrogen #optional for current drivers as system retains prior gas type
-fc.select_gas("air")  # Air [case insensitive]
-fc.tare_flow() #optional
-flow_data = fc.get_flow_data()
-print(f'Initial data: {flow_data}')
-fc.close()
-
-```
-
-### Background Daemon for Continuous Monitoring
-
-```python
-import time
-
-from instro.unstable.flowcontroller import InstroFlowController
-from instro.unstable.flowcontroller.drivers.alicat_mc import AlicatMC
-from instro.lib.publishers.nominal_core import NominalCorePublisher
-from instro.lib.transports import SerialConfig, TerminatorConfig, VisaConfig
-
-VISA_RESOURCE = "ASRL7::INSTR" #REPLACE WITH YOUR OWN
-ALICAT_DEVICE_ID = "A" #DEFAULT FOR ALICATMC
-
-device = AlicatMC(
-    VisaConfig(
-        visa_resource=VISA_RESOURCE,
-        serial_config=SerialConfig(baud_rate=19200),
-        terminator=TerminatorConfig(read="\r", write="\r"),
-    ),
-    device_id=ALICAT_DEVICE_ID,
-)
-
-fc = InstroFlowController(
-    name="fc",
-    driver=device
-)
-
-
-fc.background_interval = 0.5  # poll the controller for new values every half second.
-fc.open()
-fc.select_gas("N2")  # Nitrogen #optional for current drivers as system retains prior gas type
-fc.select_gas("air")  # Air [case insensitive]
-fc.tare_flow() #optional
-flow_data = fc.get_flow_data()
-print(f'Initial data: {flow_data}')
-
-try:
-    # Launches a background daemon that polls mass flow, volumetric flow,
-    # pressure, temperature, and setpoint.
-    fc.start()
-    #starting automatically creates a channel buffer accessible with fc.get_channel(..)
-
-    # Allow the daemon to publish baseline measurements before changing setpoint.
-    time.sleep(1)
-    
-    fc.set_setpoint(value=50.0)
-
-    time.sleep(2)
-
-    fc.set_setpoint(value=25.0)
-
-    time.sleep(2)
-
-    fc.set_setpoint(value=0.0)
-
-    time.sleep(1)
-
-    print("Sequence complete. Press Ctrl+C to stop.")
-    try:
-        while True:
-            time.sleep(1) # during this time, data will still be acquired by the flowmeter process
-            #and published across all publishers. Use fc.get_channel(..) to pull from a local buffer
-
-    except KeyboardInterrupt:
-        pass
-
-finally:
-    fc.stop()
-    fc.close()
-```
-
-In this mode:
-- `start()` begins a background daemon, executing a function or list of functions periodically.
-- `stop()` ends the background daemon.
-
-<Note>
-**Default Flow Controller Background Daemon**
-
-For each meter, using `get_flow_data()`:
-- temperature
-- pressure
-- mass flow (`mass_flow`)
-- volumetric flow (`vol_flow`)
-- setpoint (as read back from the meter)
-  - `setpoint.cmd` represents the last command to the controller from this client)
-
-
-The default polling interval is 1 second, the default within the base `Instrument` class, but is configurable via the `background_interval` property.
-</Note>
-
-**Custom Background Daemon**
-* To define your own background daemon, call `define_background_daemon(method, *args, **kwargs)`, which replaces the registered daemon functions.
-* To add a method to the background daemon stack, call `add_background_daemon_function()`.
-
-See [Two ways to get data](/overview/using-instro#two-ways-to-get-data) for more information regarding background fetching of measurements.
-
-<Note>
-**Important Note about Publishers**
-
-Data is published as a direct result of an instrument method being called.
-
-For example, when you call `get_flow_data()`, this not only queries the instrument for the voltage but also causes all attached Publishers to publish the measurement response automatically.
-
-Therefore the background daemon, when calling these instrument methods, is publishing data in the background as well!
-</Note>
-
-## Published channels
-
-Every measurement/command call produces a channel keyed under `{name}.{descriptor}`, where `{name}` is the `name` argument passed to the constructor.
-
-| Method | Descriptor | Type |
-|--------|------------|------|
-| `get_flow_data()` | `{name}.setpoint` | telemetry |
-| `get_flow_data()` | `{name}.mass_flow` | telemetry |
-| `get_flow_data()` | `{name}.vol_flow` | telemetry |
-| `get_flow_data()` | `{name}.pressure` | telemetry |
-| `get_flow_data()` | `{name}.temperature` | telemetry |
-| `set_setpoint(value)` | `{name}.setpoint.cmd` | command |
-| `select_gas(gas_name)` | `{name}.gas.cmd` | command |
-| `tare_flow()` | `{name}.tare.cmd` | command |
-
-## Method Reference
-
-| Method | Purpose |
-|--------|---------|
-| `InstroFlowController(name, driver, publishers=None, **kwargs)` | Construct an InstroFlowController with a vendor driver |
-| `open()` | Open the underlying driver transport |
-| `close()` | Close the driver transport and stop all publishers |
-| `get_flow_data()` | Poll the device and return a `Measurement` with all live readings |
-| `set_setpoint(value)` | Command a new flow setpoint in the device's configured engineering units |
-| `select_gas(gas_name)` | Select the active gas by name (case-insensitive) |
-| `tare_flow()` | Zero the flow reading; device must have zero flow when called |
-| `start()` | Begin background telemetry daemon |
-| `stop()` | End background telemetry daemon |
-
 
 ---
 
@@ -434,4 +242,3 @@ Driver development requires careful mapping of vendor-specific behavior to the u
 - Implementing all six abstract methods on `FlowControllerDriverBase`
 - Returning correctly typed `FlowData` from measurement methods
 - Parsing and raising instrument errors appropriately
-- Testing with actual hardware to ensure commands work as expected

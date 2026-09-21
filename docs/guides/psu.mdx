@@ -3,26 +3,40 @@ title: Power Supply (PSU)
 description: Using InstroPSU for SCPI-based programmable power supplies
 ---
 
-# InstroPSU
+import PowerSupplies from "/snippets/drivers/psu.mdx";
 
-`InstroPSU` is a hardware abstraction layer (HAL) that provides a unified interface for programmable power supplies. The category class defines the vendor-independent API (`set_voltage`, `get_voltage`, `output_enable`, …). A vendor-specific driver (e.g. `BK9115`, `KeysightE36100`, `TDKLambdaGenesys`, `RigolDP800`) owns its connection details and translates those calls into vendor commands.
+`InstroPSU` provides a unified interface for programmable power supplies. This class is initialized with a vendor-specific driver (`BK9115`, `KeysightE36100`, `RigolDP800`, …), and provides the vendor-agnostic API (`set_voltage`, `get_voltage`, `output_enable`, …).
+
+## Creating an InstroPSU
+
+```python
+from instro.psu.drivers import SiglentSPD3303
+from instro.psu import InstroPSU
+
+psu = InstroPSU(
+    name="myPSU",
+    driver=SiglentSPD3303(visa_resource="USB0::0xF4EC::0x1430::SPD3XJGQ806726::INSTR"),
+    num_channels=2,
+)
+```
 
 ## Supported Vendors
 
-- **B&K Precision**: 9115-series and 914X-series via SCPI/VISA (`BK9115`, `BK914X`)
-- **Keysight**: E36100-series single-channel via SCPI/VISA (`KeysightE36100`)
-- **Rigol**: DP-series via SCPI/VISA (`RigolDP800`), including OVP/OCP controls and remote sense on supported DP800 channels
-- **Siglent**: SPD-series via SCPI/VISA (`SiglentSPD3303`)
-- **TDK Lambda**: Genesys family via SCPI/VISA (`TDKLambdaGenesys`), including white-label Agilent/Keysight N5700-series supplies
-- **Simulated**: `SimulatedPSU` for use with the bundled SCPI simulator
+<PowerSupplies />
 
 The following vendor is available as a community-contributed driver in `instro-contrib` (install with `instro[contrib]`; see [Contrib drivers](/library/contrib)):
 
 - **Matrix**: WPS300S-series single-channel via SCPI/RS-232 (`MatrixWPS300S`)
 
-If your vendor or model is not listed, see [Custom Driver Development](#custom-driver-development) below.
+If your vendor or model is not listed, see [Custom Driver Development](#custom-driver-development) below, or open a [Driver Request](https://github.com/nominal-io/instro/issues) issue on GitHub.
 
-## Key Concepts
+## Example
+
+More examples found in [Examples](examples/psu/)
+
+## Details
+
+The following presents details about the `InstroPSU`. Specific driver details can be found on [their pages](#supported-vendors).
 
 ### Driver Composition
 
@@ -46,31 +60,7 @@ The typical InstroPSU workflow:
 5. **`stop()`**: ends the background daemon (if started).
 6. **`close()`**: disconnects from hardware.
 
-## Creating an InstroPSU Instance
-
-```python
-from instro.psu.drivers import SiglentSPD3303
-from instro.psu import InstroPSU
-
-psu = InstroPSU(
-    name="myPSU",
-    driver=SiglentSPD3303(visa_resource="USB0::0xF4EC::0x1430::SPD3XJGQ806726::INSTR"),
-    num_channels=2,
-)
-```
-
-### Constructor Parameters
-
-- **`name`**: A name for this PSU instance. Used as a prefix for channel names when publishing. Falls back to `config.device.name` when `config` is given.
-- **`driver`**: A concrete `PSUDriverBase` instance (e.g. `SiglentSPD3303`) configured with the connection details for that model. Mutually exclusive with `config`.
-- **`num_channels`**: Number of output channels on the power supply. Mutually exclusive with `config`.
-- **`config`**: A `PSUConfig`, a dict, or a path to a JSON config file, as an alternative to `driver`/`num_channels`. See [From a JSON Config File](#from-a-json-config-file) below.
-- **`publishers`**: Optional list of publishers to attach. Combined with any publishers declared in `config`.
-- **`autostart`**: When `True`, opens the connection and starts background polling immediately.
-- **`**kwargs`**: Additional keyword arguments become default tags when using a publisher that supports tags (like `NominalCorePublisher`).
-  - **`dataset_rid`**: Optional Nominal dataset RID. When set, automatically creates and attaches a `NominalCorePublisher` for that dataset instead of becoming a default tag.
-
-### From a JSON Config File
+### Init from a Config File
 
 `InstroPSU` can also be constructed directly from a JSON config file, which removes the need to write any Python setup code:
 
@@ -80,7 +70,7 @@ from instro.psu import InstroPSU
 psu = InstroPSU(config="bench_psu.json")
 ```
 
-Where bench_psu.json contains:
+Where `bench_psu.json` contains:
 
 ```json
 {
@@ -112,268 +102,9 @@ Where bench_psu.json contains:
 }
 ```
 
-`device.name` is required and used as the channel-name prefix when publishing; `description`, `manufacturer`, and `model` are optional descriptive metadata about the physical instrument.
+See [Config Files](/library/config-files) for the full field reference.
 
-`driver.name` must match one of the registered vendor/model keys (e.g. `BK9115`, `BK914X`, `SiglentSPD3303`). The `visa` block accepts every `VisaConfig` field, so a non-default backend, timeout, or serial setting can be set from JSON too:
-
-```json
-"visa": {
-  "visa_resource": "USB0::0x2A8D::0x0101::MY12345::INSTR",
-  "visa_backend": "@py",
-  "timeout": { "recv": 5 }
-}
-```
-
-`publishers` is optional and accepts a list of `NominalCorePublisher` and/or `FilePublisher` entries, each tagged by `type`:
-
-```json
-"publishers": [
-  { "type": "NominalCorePublisher", "dataset_rid": "<dataset_rid>" },
-  { "type": "FilePublisher", "directory": "psu_data", "format": "csv" }
-]
-```
-
-An optional top-level `timing` section (`{"poll_interval": 1.0}`) sets the background daemon's polling interval. Pass `autostart=True` to open the connection and start polling immediately:
-
-```python
-psu = InstroPSU(config="bench_psu.json", autostart=True)
-```
-
-`config` also accepts a plain dict or an already-built `PSUConfig`, so a config built or received elsewhere in code (a UI form, a discovery scan) can construct an `InstroPSU` directly, without a JSON round-trip:
-
-```python
-# instantiated InstroPSU with plain dict config
-psu = InstroPSU(config={
-    "device": {
-        "name": "bench_psu",
-        "description": "Bench channel 1 supply",
-        "manufacturer": "B&K Precision",
-        "model": "9115",
-    },
-    "driver": {
-        "name": "BK9115",
-        "num_channels": 1,
-        "connection_type": "visa",
-        "visa": {"visa_resource": "USB0::0x2A8D::0x0101::MY12345::INSTR"},
-    },
-    "timing": {"poll_interval": 1.0},
-    "publishers": [{"type": "NominalCorePublisher", "dataset_rid": "<dataset_rid>"}],
-})
-
-# instantiating InstroPSU with pre-built PSUConfig object
-psu = InstroPSU(config=my_psu_config)
-```
-
-JSON configs are validated strictly: `PSUConfig` forbids any field not listed above (`version`, `instrument`, `device`, `driver`, `timing`, `publishers`), so there is no `**kwargs`-style escape hatch from JSON. Set default tags via the direct Python constructor instead.
-
-### Choosing a Driver
-
-Choose the concrete driver that matches the power supply model, then pass the instrument connection settings to that driver. For example, use `BK914X` for the B&K 914X-series, `KeysightE36100` for Keysight E36100-series supplies, or `RigolDP800` for Rigol DP-series.
-
-To inspect a VISA instrument's identity before choosing a driver:
-
-```python
-from instro.lib.transports import VisaDriver
-
-visa = VisaDriver("USB0::...")
-try:
-    visa.open()
-    print(visa.query("*IDN?"))
-finally:
-    visa.close()
-```
-
-## Examples
-
-All measurement methods return [`Measurement`](/library/library#measurement) objects. This is common amongst all `Instrument` objects.
-
-### Basic Usage
-
-```python
-import time
-
-from instro.psu.drivers import SiglentSPD3303
-from instro.psu import InstroPSU
-from instro.lib.publishers import NominalCorePublisher
-
-VISA_RESOURCE = "USB0::0xF4EC::0x1430::SPD3XJGQ806726::INSTR"
-DATASET_RID = "<your dataset here>"
-
-psu = InstroPSU(
-    name="myPSU",
-    driver=SiglentSPD3303(visa_resource=VISA_RESOURCE),
-    num_channels=2,
-)
-psu.add_publisher(NominalCorePublisher(dataset_rid=DATASET_RID))
-
-psu.open()
-
-# Configure channel 1
-psu.set_current_limit(0.5, channel=1)
-psu.set_voltage(12.0, channel=1)
-psu.output_enable(True, channel=1)
-
-time.sleep(0.5)
-
-# Read channel 1
-voltage = psu.get_voltage(channel=1)
-current = psu.get_current(channel=1)
-status = psu.get_output_status(channel=1)
-print(f"V: {voltage.latest:.3f}V, I: {current.latest:.3f}A, On: {status.latest}")
-
-psu.output_enable(False, channel=1)
-psu.close()
-```
-
-### Background Daemon for Continuous Monitoring
-
-```python
-import time
-
-from instro.psu.drivers import SiglentSPD3303
-from instro.psu import InstroPSU
-from instro.lib.publishers import NominalCorePublisher
-
-VISA_RESOURCE = "USB0::0xF4EC::0x1430::SPD3XJGQ806726::INSTR"
-DATASET_RID = "<your dataset here>"
-
-psu = InstroPSU(
-    name="myPSU",
-    driver=SiglentSPD3303(visa_resource=VISA_RESOURCE),
-    num_channels=2,
-)
-psu.add_publisher(NominalCorePublisher(dataset_rid=DATASET_RID))
-
-# Configure telemetry rate (optional, default is 1 second)
-psu.background_interval = 0.5  # Poll every 500ms
-
-psu.open()
-
-# Start background daemon
-psu.start()
-
-# Configure channel 1
-psu.set_current_limit(0.5, channel=1)
-psu.set_voltage(12.0, channel=1)
-psu.output_enable(True, channel=1)
-
-# Data flows automatically to publishers
-while True:
-    try:
-        # Optionally grab data being produced by the background daemon.
-        ch1_voltage = psu.get_channel(
-            channel_name = "myPSU.ch1.voltage",
-            length = 1,
-            wait_for_new_samples = True)  # This will block for the next sample from the background daemon
-        ch1_current = psu.get_channel(
-            channel_name = "myPSU.ch1.current",
-            length = 5,
-            wait_for_new_samples = False)  # This will immediately return with the last 5 measurements for this channel (if available).
-        print(f"Voltage, Channel 1: {ch1_voltage}")
-        print(f"Current, Channel 1: {ch1_current}")
-    except KeyboardInterrupt:
-        print("Stopping...")
-        break
-
-psu.output_enable(False, channel=1)
-
-# Stop background daemon
-psu.stop()
-psu.close()
-```
-
-In this mode:
-- `start()` begins a background daemon, executing a function or list of functions periodically.
-- `stop()` ends the background daemon.
-
-<Note>
-**Default PSU Background Daemon**
-
-For each <Tooltip tip="A named signal for a series of measurements or computed values (example: voltage, pressure, system state).">channel</Tooltip>:
-- Output voltage (via `get_voltage(channel=...)`)
-- Output current (via `get_current()`)
-- Output enable status (via `get_output_status()`)
-
-The default polling interval is 1 second, configurable via the `background_interval` property.
-</Note>
-
-**Custom Background Daemon**
-* To define your own background daemon, call `define_background_daemon(method, *args, **kwargs)`, which replaces the registered daemon functions.
-* To add a method to the background daemon stack, call `add_background_daemon_function()`.
-
-See [Two ways to get data](/overview/using-instro#two-ways-to-get-data) for more information regarding background fetching of measurements.
-
-<Note>
-**Important Note about Publishers**
-
-Data is published as a direct result of an instrument method being called.
-
-For example, when you call `get_voltage(channel=1)`, this not only queries the instrument for the voltage but also causes all attached Publishers to publish the measurement response automatically.
-
-Therefore the background daemon, when calling these instrument methods, is publishing data in the background as well!
-</Note>
-
-## Published channels
-
-Every measurement/command call produces a channel keyed under `{name}.{descriptor}`, where `{name}` is the constructor argument and `{descriptor}` is the row below. Substitute `{N}` with the actual channel number (`1`, `2`, …). If you need the pre-v1.0 channel names instead, pass [`legacy_naming=True`](/library/library#backwards-compatible-channel-naming-legacy_naming) to the constructor.
-
-| Method | Descriptor | Type |
-|--------|------------|------|
-| `set_voltage(channel=N)` | `ch{N}.voltage.cmd` | command |
-| `get_voltage(channel=N)` | `ch{N}.voltage` | telemetry |
-| `set_current_limit(channel=N)` | `ch{N}.current.cmd` | command |
-| `get_current(channel=N)` | `ch{N}.current` | telemetry |
-| `output_enable(channel=N)` | `ch{N}.enabled.cmd` | command |
-| `get_output_status(channel=N)` | `ch{N}.enabled` | telemetry |
-| `get_voltage_setpoint(channel=N)` | `ch{N}.voltage.setpoint` | telemetry |
-| `get_current_setpoint(channel=N)` | `ch{N}.current.setpoint` | telemetry |
-| `get_operating_mode(channel=N)` | `ch{N}.operating_mode` | telemetry |
-| `set_overvoltage_protection_level(channel=N)` | `ch{N}.ovp.cmd` | command |
-| `get_overvoltage_protection_level(channel=N)` | `ch{N}.ovp` | telemetry |
-| `set_overvoltage_protection_enabled(channel=N)` | `ch{N}.ovp.enabled.cmd` | command |
-| `get_overvoltage_protection_enabled(channel=N)` | `ch{N}.ovp.enabled` | telemetry |
-| `set_overvoltage_protection_delay(channel=N)` | `ch{N}.ovp.delay.cmd` | command |
-| `get_overvoltage_protection_delay(channel=N)` | `ch{N}.ovp.delay` | telemetry |
-| `set_overcurrent_protection_level(channel=N)` | `ch{N}.ocp.cmd` | command |
-| `get_overcurrent_protection_level(channel=N)` | `ch{N}.ocp` | telemetry |
-| `set_overcurrent_protection_enabled(channel=N)` | `ch{N}.ocp.enabled.cmd` | command |
-| `get_overcurrent_protection_enabled(channel=N)` | `ch{N}.ocp.enabled` | telemetry |
-| `set_remote_sense_enabled(channel=N)` | `ch{N}.remote_sense.cmd` | command |
-| `get_remote_sense_enabled(channel=N)` | `ch{N}.remote_sense` | telemetry |
-
-## Method Reference
-
-| Method | Purpose |
-|--------|---------|
-| `InstroPSU(name, driver, num_channels, publishers=None, legacy_naming=False, **kwargs)` | Construct an InstroPSU with a vendor driver |
-| `InstroPSU(config=..., publishers=None, autostart=False, **kwargs)` | Construct from a `PSUConfig`, a dict, or a path to a JSON config file |
-| `open()` | Establish the connection to the PSU |
-| `close()` | Disconnect from PSU and close all publishers |
-| `set_voltage(voltage, channel=N)` | Set voltage setpoint in volts |
-| `get_voltage(channel=N)` | Read measured output voltage in volts. May vary from the voltage setpoint outside of constant voltage mode |
-| `set_current_limit(current_limit, channel=N)` | Set current limit in amperes |
-| `get_current(channel=N)` | Read measured output current in amperes. May vary from the current-limit setpoint outside of constant current mode |
-| `output_enable(enable, channel=N)` | Enable (True) or disable (False) the output |
-| `get_output_status(channel=N)` | Query output enable state (returns Measurement with bool value) |
-| `get_voltage_setpoint(channel=N)` | Read the configured voltage setpoint in volts (not the measured output). May vary from the actual measured voltage outside of constant voltage mode |
-| `get_current_setpoint(channel=N)` | Read the configured current-limit setpoint in amperes (not the measured output). May vary from the actual measured current outside of constant current mode |
-| `get_operating_mode(channel=N)` | Query the regulation mode (returns Measurement with value `CV`, `CC`, or `OFF`) |
-| `set_overvoltage_protection_level(voltage, channel=N)` | Set the overvoltage protection threshold in volts |
-| `get_overvoltage_protection_level(channel=N)` | Read the overvoltage protection threshold in volts |
-| `set_overvoltage_protection_enabled(enabled, channel=N)` | Enable or disable overvoltage protection |
-| `get_overvoltage_protection_enabled(channel=N)` | Query whether overvoltage protection is enabled |
-| `set_overvoltage_protection_delay(delay, channel=N)` | Set the overvoltage protection trip delay in seconds |
-| `get_overvoltage_protection_delay(channel=N)` | Read the overvoltage protection trip delay in seconds |
-| `set_overcurrent_protection_level(current, channel=N)` | Set the overcurrent protection threshold in amperes |
-| `get_overcurrent_protection_level(channel=N)` | Read the overcurrent protection threshold in amperes |
-| `set_overcurrent_protection_enabled(enabled, channel=N)` | Enable or disable overcurrent protection |
-| `get_overcurrent_protection_enabled(channel=N)` | Query whether overcurrent protection is enabled |
-| `set_remote_sense_enabled(enabled, channel=N)` | Enable or disable remote sense |
-| `get_remote_sense_enabled(channel=N)` | Query whether remote sense is enabled |
-| `start()` | Begin background telemetry daemon |
-| `stop()` | End background telemetry daemon |
-
-# Simulated Power Supply
+### Simulated Power Supply
 
 For development and testing without physical hardware, Nominal Instrumentation includes a local SCPI power-supply simulator. See [PSU simulator](/psu-simulator) for the quickstart, usage notes, and supported command set.
 
@@ -619,6 +350,3 @@ Driver development requires careful mapping of vendor-specific behavior to the u
 - Hiding transport construction inside the driver
 - Implementing all abstract methods on `PSUDriverBase`
 - Using the correct vendor protocol or command syntax
-- Converting instrument responses to the expected Python types
-- Querying and reporting errors from the instrument's error queue where one exists
-- Testing with actual hardware to ensure commands work as expected
