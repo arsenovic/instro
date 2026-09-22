@@ -16,12 +16,12 @@
           {
             "group": "Overview",
             "icon": "rocket",
-            "root": "overview/overview",
+            "root": "overview",
             "expanded": true,
             "pages": [
-              "overview/quickstart",
-              "overview/installation",
-              "overview/cli"
+              "quickstart",
+              "installation",
+              "cli"
             ]
           },
           {

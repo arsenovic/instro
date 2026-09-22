@@ -42,7 +42,7 @@ measurement = daq.read_analog()  # written to `publishers`
 print(pub.file_path.read_text())
 ```
 
-## [Installation](https://instro.nominal.io/overview/installation)
+## [Installation](https://instro.nominal.io/installation)
 
 ### Basic
 <table>
@@ -99,7 +99,7 @@ Available packages:
 | **Other** | `contrib` | Community-contributed drivers |
 |  | `unstable` | Experimental unstable modules |
 
-See [Installation](https://instro.nominal.io/overview/installation) for more info.
+See [Installation](https://instro.nominal.io/installation) for more info.
 
 ## [Supported devices](https://instro.nominal.io/instruments)
 

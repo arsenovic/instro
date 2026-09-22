@@ -481,7 +481,7 @@ daq.close()
 While the daemon is running, `read()` and `read_batch()` serve analog channels from the acquisition the daemon just completed, so the same read code works whether or not the daemon is running. Both block until the next acquisition arrives, so a read returns new samples instead of the last cached value. `read_analog()` raises instead: the daemon owns the hardware reads. Call `get_channel()` to read the channel buffer, which keeps per-channel sample history and the daemon's own timing channels. See the [software-timed example](/examples/daq/daq_read_analog_sw_timed).
 
 ### Hardware-Timed Acquisition with Background Fetching
-See [Two ways to get data](/overview/using-instro#two-ways-to-get-data) for more information regarding background fetching of measurements.
+See [Two ways to get data](/using-instro#two-ways-to-get-data) for more information regarding background fetching of measurements.
 
 For continuous high-speed acquisition.
 
