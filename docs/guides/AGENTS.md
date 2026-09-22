@@ -22,7 +22,7 @@ Routing is a strict 1:1 mapping of file path (relative to `docs.json`) to URL �
 | `snippets/drivers/<category>/` | Reusable content — **never built as standalone pages**, even unimported (the one Mintlify folder exempt from becoming routes). `<category>.mdx` is the vendor card-grid aggregator imported by that category's guide page. `<category>/<slug>/` holds one driver's `card.mdx` (the vendor card, imported by both the aggregator and the driver's own page), `driver-page.mdx` (the driver page's body), and `image.png`. |
 | `migration/`, `images/`, `logo/` | Migration guides, static assets. |
 
-**Gotcha:** a page can't be both `docs.json`-listed *and* imported elsewhere as a snippet — `mint export` 404s on it (confirmed, not just a lint warning). `mint broken-links`/`mint validate` don't catch this; verify snippet-import changes with a full `mint export`.
+**Gotcha:** a page imported elsewhere as a component (`import X from "/path/to/page.mdx"`) stops being servable at its own route — 404s there, regardless of whether it's also `docs.json`-listed. `mint broken-links`/`mint validate` don't catch this; verify any `import .../*.mdx` outside `snippets/` with `mint dev` (hit the imported page's own URL) or a full `mint export`.
 ## Tasks 
 ### Adding a new instrument driver
 
