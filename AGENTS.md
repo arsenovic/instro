@@ -39,7 +39,6 @@ The `instro` repository is a shared `uv`/`cargo` workspace. The top-level Python
 - **Every change has a tracking issue/ticket.** Branch off `main` and name the branch after the GitHub issue or ticket ID (e.g. `issue-142-siglent-spd-driver`, `instro-248-docstring-cleanup`). No untracked work. Open an issue first if one doesn't exist.
 - **Conventional Commits** for PR titles and commits: `<type>(<scope>): <imperative description>`. Types: `feat`, `fix`, `chore`, `docs`, `refactor`. Append `!` for breaking changes. Title under 72 chars, no trailing period.
 - **Driver migrations from `instro-contrib` or `instro-unstable` are not breaking changes**, including moves to core or another workspace package that change imports. Use a normal Conventional Commit title without `!` or a `BREAKING CHANGE` footer for the migration itself; no major-version release or release override is required solely for the move. Document the new import path in the PR and affected user docs. See [migration policy](./CONTRIBUTING.md#pull-request-titles).
-- **No multi-paragraph docstrings.** One short line max. Don't reintroduce verbose docstrings: the repo went through a deliberate cleanup pass (INSTRO-248).
 - **No comments unless the *why* is non-obvious.** Don't restate what the code does.
 - **Type hints required** on all public methods. `mypy` is enforced.
 - **`ruff format` and `ruff check` are enforced.** Run `just check` before pushing.
@@ -75,8 +74,31 @@ The contrib bar is in [CONTRIBUTING.md](./CONTRIBUTING.md#instro-contrib--commun
 Add the driver to the "Available drivers" section of [`docs/guides/library/contrib.mdx`](./docs/guides/library/contrib.mdx) in the same PR. That section is documented as the complete set of contrib drivers for the current release — a merged driver missing from it makes the doc wrong.
 
 ## Documentation
+Docs live in this repo and ship in the same PR as the code change.
 
-Docs live in this repo and ship in the same PR as the code change. When a change is user-visible or alters how contributors work, update the relevant files on the same branch:
+### Overview
+There are several kinds of docs:
+* Docstrings
+  - (in code). Exist in the codebase. Used on-the-fly and to generate content for the SDK docs. details on doc-string style defined in this readme. 
+* SDK
+  - `docs/sdk/`. The .md files which structure the SDK, content mostly provided by docstrings. See [`docs/sdk/AGENTS.md`](./docs/sdk/AGENTS.md).
+  - Uses mkdocs. Can be run with `cd docs/sdk;uv run --with mkdocs mkdocs build`.
+* Guides
+  - `docs/guides`. Narrative style docs which should link to SDK. See [`docs/guides/AGENTS.md`](./docs/guides/AGENTS.md).
+  - Uses mintlify. Install, `npm i -g mint`. Run, `cd docs/guides;mint dev`. Check links, `mint broken-links`.
+* Examples
+  - Source is Python files in `/examples/`. are built with a scripts as described in  [`docs/guides/AGENTS.md`](./docs/guides/AGENTS.md).
+
+### Doc-string style
+All new code should have docstrings using Google format. They should have:
+* A writing style that is concise and clear.
+* If you are unsure about an interpretation, do not guess. Just leave it without explanation, but add a TODO: add doc.
+* All args and returns should indicate types, as well as units if applicable.
+* For classes, the `__init__` should provide a full usage example.
+* Use mkdocstrings alongside the mkdocs-autorefs plugin to link to other parts of code, where relevant.
+
+### Changes 
+ When a change is user-visible or alters how contributors work, update the relevant files on the same branch:
 
 | Change type | Files to update |
 |---|---|
@@ -84,7 +106,7 @@ Docs live in this repo and ship in the same PR as the code change. When a change
 | New contrib driver | "Available drivers" section of `docs/guides/library/contrib.mdx` |
 | Public API change (HAL methods, signatures, return types, new category) | `docs/sdk/src/` (reference docs) and any affected `docs/guides/` examples |
 | New feature, behavior change, or new install extra | `docs/guides/` (Mintlify site); also `README.md` if it touches the quickstart, install instructions, or extras table |
-| New category or top-level module | All of the above plus `docs/guides/docs.json` navigation |
+| New category or top-level module | All of the above plus `docs/guides/docs.json` navigation and `docs/sdk/mkdocs.yml` navigation |
 | Contributor workflow, repo convention, or tooling change | `CONTRIBUTING.md` and this file (`AGENTS.md`) |
 | New or changed AI skill/subagent | Both toolchains' copies (Claude `.claude/`, Codex `.agents/` + `.codex/`) and the [Repo skills and subagents](#repo-skills-and-subagents) table |
 
@@ -183,4 +205,4 @@ When you add or change a skill/subagent, update **both** toolchains' copies and 
 
 ## Per-directory agent docs
 
-Some subdirectories have their own `AGENTS.md` with narrower instructions (e.g. `docs/guides/AGENTS.md` for documentation-site work). When working inside one of those directories, that file's guidance takes precedence over this one.
+Some subdirectories have their own `AGENTS.md` with narrower instructions (e.g. `docs/guides/AGENTS.md` for the Mintlify guides site, `docs/sdk/AGENTS.md` for the mkdocs/mkdocstrings SDK reference site). When working inside one of those directories, that file's guidance takes precedence over this one.

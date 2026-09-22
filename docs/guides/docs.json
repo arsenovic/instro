@@ -49,9 +49,11 @@
               "library/publishers",
               "library/protocols/overview",
               "library/transports/overview",
-              "library/exceptions",
+              "library/config-files",
+              "library/simulated-instruments",
               "library/custom-instruments",
-              "library/contrib"
+              "library/contrib",
+              "library/exceptions"
             ]
           }
         ]

@@ -23,8 +23,8 @@ Routing is a strict 1:1 mapping of file path (relative to `docs.json`) to URL �
 | `migration/`, `images/`, `logo/` | Migration guides, static assets. |
 
 **Gotcha:** a page can't be both `docs.json`-listed *and* imported elsewhere as a snippet — `mint export` 404s on it (confirmed, not just a lint warning). `mint broken-links`/`mint validate` don't catch this; verify snippet-import changes with a full `mint export`.
-
-## Adding a new instrument driver
+## Tasks 
+### Adding a new instrument driver
 
 For an existing category (`scope`, `psu`, `dmm`, `eload`, `daq`, `awg`, `flowcontroller`, `i2c`). Touches only files under `docs/guides/` — never `docs.json`:
 
@@ -36,14 +36,14 @@ For an existing category (`scope`, `psu`, `dmm`, `eload`, `daq`, `awg`, `flowcon
 6. Confirm the SDK anchor the driver page's closing link points at actually exists (`https://nominal-io.github.io/instro/instruments/<category>/#<slug>`): `docs/sdk/src/instruments/<category>.md` needs a `### <Vendor Model>` heading with a `::: instro.<category>.drivers.<module>` block for the new driver. Add it there if missing — `docs/sdk` is a separate mkdocs site, not this one, but the link is dead without it.
 7. Run `mint broken-links`. If the driver page's imports touch anything that's also `docs.json`-listed, run a full `mint export` too (see the gotcha above).
 
-## Adding a new instrument class
+### Adding a new instrument class
 
 A whole new `InstroX` category. Touches `docs.json` and several shared pages, not just the category's own guide:
 
 1. **Category guide page** — `<category>.mdx` at the guides root, matching the shape of the existing category pages: intro paragraph, minimal `## Creating an Instro<Category>` example, "## Supported Vendors" card grid, "## Example" link, "## Details", and a one-line "## Custom Driver Development" pointer at the end.
 2. **Driver snippets** — `snippets/drivers/<category>.mdx` (the card-grid aggregator) plus one `snippets/drivers/<category>/<slug>/` folder per initial driver, and their hidden `<category>/<DriverClassName>.mdx` pages. See "Adding a new instrument driver" above for the shape of each.
 3. **`docs.json`** — add `"<category>"` to the `Docs` tab's Instruments group `pages` array. This is the one case that needs a manual nav edit; individual drivers within an existing category never do.
-4. **`instruments.mdx`** — add `import <Category> from "/snippets/drivers/<category>.mdx";` and a `### <label>: \`Instro<Category>\`` heading + `<Category />` block, positioned to match `docs.json`'s Instruments order.
+4. **`instruments.mdx`** — add `import <Category> from "/snippets/drivers/<category>.mdx";` and a heading of the form `### <label>: InstroCategory` (the class name in inline code) followed by a `<Category />` block, positioned to match `docs.json`'s Instruments order.
 5. **`library/custom-instruments.mdx`** — add a `## <Category display name>` section under "# Driver Development", positioned to match the Instruments TOC order (see Site structure above), and add it to the intro Tip's jump-link list.
 6. **`library/config-files.mdx`** — if the category accepts `config=`, add a subsection for its state-block fields, matching the existing per-category subsections.
 7. **Examples** — add script(s) under `examples/<category>/` (or the relevant `packages/instro-*/.../examples/`), run `just gen-examples` to generate the example pages and the category's `index.mdx`, then add one line to `docs.json`'s Examples tab pointing at that index — the one manual edit the generator can't make.
