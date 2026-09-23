@@ -17,9 +17,11 @@ from instro.unstable.flowcontroller import InstroFlowController
 
 fc = InstroFlowController(
     name="myFlowController",
-    driver=AlicatMC(VisaConfig(visa_resource=VISA_RESOURCE)),
+    driver=AlicatMC("ASRL7::INSTR"),
 )
 ```
+
+A bare resource string applies the Alicat RS-232 defaults (19200 baud, carriage-return terminators). Pass a `VisaConfig` from `instro.lib.transports.visa` instead to override them, and `device_id` to address a unit other than `"A"`.
 
 ## Supported Vendors
 
@@ -39,11 +41,8 @@ The following presents details about the `InstroFlowController`. Specific driver
 
 An `InstroFlowController` is built from a concrete driver:
 
-```
-InstroFlowController(
-    name="FlowController",
-    driver = AlicatMC(VisaConfig(visa_resource=VISA_RESOURCE))
-)
+```python
+InstroFlowController(name="FlowController", driver=AlicatMC("ASRL7::INSTR"))
 ```
 
 - The **vendor driver** (e.g. `AlicatMC`) owns the connection setup and vendor-specific command mapping.
