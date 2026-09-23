@@ -421,29 +421,7 @@ The device never starts a buffered acquisition in this mode: each daemon iterati
 
 ### Software-Timed Acquisition (Manual Polling)
 
-For manual, on-demand sampling:
-
-```python
-import time
-
-daq.open()
-
-# Configure channels
-daq.configure_voltage_input(
-    physical_channel="AIN0",
-    alias="sensor_1",
-    range_min=0,
-    range_max=5
-)
-
-# Read samples on demand
-for i in range(10):
-    measurement = daq.read_analog()
-    print(f"Value: {measurement.latest}")
-    time.sleep(1)  # Wait 1 second between reads
-
-daq.close()
-```
+For manual, on-demand sampling, configure the input channels and call `read_analog()` in your own loop. See [DAQ read analog SW timed without a background daemon](/examples/daq/daq_read_analog_sw_timed_no_background).
 
 The `read_analog()` method returns a `Measurement` object (or list of `Measurement` objects for multiple channels) containing:
 - `channel_data`: Dictionary mapping channel aliases to lists of values
@@ -453,87 +431,14 @@ The `read_analog()` method returns a `Measurement` object (or list of `Measureme
 
 ### Software-Timed Acquisition with the Background Daemon
 
-For continuous software-timed acquisition, configure a polling rate and `start()` the background daemon. The daemon calls `read_analog()` once per period and publishes the results.
-
-```python
-daq.open()
-
-daq.configure_voltage_input(
-    physical_channel="AIN0",
-    alias="sensor_1",
-    range_min=0,
-    range_max=5
-)
-
-# Pace the background daemon at 10 Hz (no hardware clock is involved)
-daq.configure_ai_sw_sample_rate(sample_rate=10)
-
-daq.start()
-
-# Pull the latest sample from the channel buffer whenever you need it
-measurement = daq.get_channel("sensor_1", wait_for_new_samples=True)
-print(f"Value: {measurement.latest}")
-
-daq.stop()
-daq.close()
-```
+For continuous software-timed acquisition, configure a polling rate with `configure_ai_sw_sample_rate()` and `start()` the background daemon. The daemon calls `read_analog()` once per period and publishes the results.
 
 While the daemon is running, `read()` and `read_batch()` serve analog channels from the acquisition the daemon just completed, so the same read code works whether or not the daemon is running. Both block until the next acquisition arrives, so a read returns new samples instead of the last cached value. `read_analog()` raises instead: the daemon owns the hardware reads. Call `get_channel()` to read the channel buffer, which keeps per-channel sample history and the daemon's own timing channels. See the [software-timed example](/examples/daq/daq_read_analog_sw_timed).
 
 ### Hardware-Timed Acquisition with Background Fetching
 See [Two ways to get data](/using-instro#two-ways-to-get-data) for more information regarding background fetching of measurements.
 
-For continuous high-speed acquisition.
-
-```python
-import time
-from instro.daq.drivers.labjack import LabJackTSeriesDriver
-from instro.daq import InstroDAQ
-from instro.lib.publishers import NominalCorePublisher
-
-DATASET_RID = "ri.catalog.main.dataset.<your-dataset-rid>"
-
-# Create DAQ with publisher
-daq = InstroDAQ(
-    name="myDAQ",
-    driver=LabJackTSeriesDriver(device_id="440020473"),
-)
-daq.add_publisher(NominalCorePublisher(dataset_rid=DATASET_RID))
-
-daq.open()
-
-# Configure analog input channels
-daq.configure_voltage_input(
-    physical_channel="AIN0",
-    alias="sensor_1",
-    range_min=0,
-    range_max=5
-)
-
-# Configure hardware timing
-daq.configure_ai_hw_sample_rate(
-    sample_rate=100,  # 100 Hz
-)
-
-# Start background acquisition
-daq.start()
-
-# Data is now flowing to publishers automatically
-while True:
-    try:
-        sensor_1 = daq.get_channel(
-            channel_name = "myDAQ.sensor_1",
-            length = 10,
-            wait_for_new_samples = True)  # This will block for the next 10 samples from the background daemon
-        print("Stopping acquisition")
-        break
-    except KeyboardInterrupt:
-        print("Exiting main loop")
-        break
-
-daq.stop()
-daq.close()
-```
+For continuous high-speed acquisition, program the sample clock with `configure_ai_hw_sample_rate()`, then `start()` the background daemon and pull samples with `get_channel()`. See [DAQ read analog HW timed](/examples/daq/daq_read_analog_hw_timed).
 
 In this mode:
 - `start()` begins hardware-timed acquisition in the background daemon
@@ -551,28 +456,8 @@ Therefore the background daemon, which is calling instrument methods, is publish
 
 ### Hardware-Timed Acquisition with Manual Fetching
 
-For hardware-timed acquisition where you control when to fetch buffered data, start without the background daemon and manually call `read_analog()`.
+For hardware-timed acquisition where you control when to fetch buffered data, call `start(background=False)` to fill the hardware buffer without spinning the background daemon, then call `read_analog()` yourself. See [DAQ read analog HW timed without a background daemon](/examples/daq/daq_read_analog_hw_timed_no_background).
 
-```python
-
-daq.open()
-
-# Configure channels and timing (same as above)
-daq.configure_voltage_input(...)
-daq.configure_ai_hw_sample_rate(sample_rate=100, samples_per_channel=10)
-
-# Start hardware acquisition (fills buffer) without spinning the background daemon
-daq.start(background=False)
-
-# Manually fetch from buffer when ready
-for i in range(10):
-    measurement = daq.read_analog()
-    print(f"Fetched {len(measurement.timestamps)} samples")
-    time.sleep(0.1)
-
-daq.stop()
-daq.close()
-```
 <Warning>
 Failing to fetch samples from the hardware buffer at a reasonable rate will cause the DAQ data buffer to fill up and data will be either lost or an exception will be raised.
 </Warning>
@@ -581,21 +466,9 @@ With `start(background=False)`, calling `read_analog()` during hardware-timed ac
 ## Analog Output
 
 ### Software-Timed Generation
-For manual, on demand updates of set points:
 
-```python
-daq.open()
+For manual, on-demand updates of set points, configure the output channels with `configure_voltage_output()` and call `write_analog_value()`. See [DAQ write analog SW timed](/examples/daq/daq_write_analog_sw_timed).
 
-daq.configure_voltage_output(
-    physical_channel=CHANNEL_0,
-    alias=f"ao_0",
-    range_min=0,
-    range_max=5
-)
-daq.write_analog_value("ao_0", 2.2)
-
-daq.close()
-```
 ## Digital I/O
 
 ### Reading Digital Lines
@@ -613,26 +486,6 @@ measurement = daq.read_digital_line(channel="limit_switch")
 print(f"Digital state: {measurement.latest}")
 ```
 
-### Software Timed Generation
-
-For manual, on-demand setting of analog output channels:
-
-```python
-daq.open()
-
-daq.configure_voltage_output(
-    physical_channel=CHANNEL_0, alias=f"ao_0", range_min=0, range_max=5
-)
-daq.configure_voltage_output(
-    physical_channel=CHANNEL_1, alias=f"ao_1", range_min=0, range_max=5
-)
-
-daq.write_analog_value("ao_0", 2.2)
-daq.write_analog_value("ao_1", 3.4)
-
-daq.close()
-
-```
 ### Writing Digital Lines
 
 ```python
@@ -730,94 +583,9 @@ daq.write_batch(["ao0", "enable"], [2.2, 1])
 
 Values may be `float`, `int`, or `bool`, and every channel and value is validated before anything is written: each alias must be configured as an output channel (unknown aliases raise `KeyError`), aliases may appear only once per batch, analog outputs require a finite number within the channel's configured `range_min`/`range_max`, digital lines require `0` or `1` (in any of the three forms), and digital ports require an integer. An invalid value, a duplicate alias, or a `channels`/`values` length mismatch raises `ValueError` with no channels written. Digital values are coerced to `int`. Relays are not routed through `write()`; use `open_relay()` and `close_relay()`.
 
-## Complete Examples
+## Example
 
-### Example 1: Multi-Channel Software-Timed Acquisition
-
-```python
-import time
-from instro.daq.drivers.labjack import LabJackTSeriesDriver
-from instro.daq import InstroDAQ
-from instro.lib.publishers import NominalCorePublisher
-
-DATASET_RID = "ri.catalog.main.dataset.<your-dataset-rid>"
-
-daq = InstroDAQ(
-    name="myDAQ",
-    driver=LabJackTSeriesDriver(device_id="440020473"),
-)
-daq.add_publisher(NominalCorePublisher(dataset_rid=DATASET_RID))
-
-daq.open()
-
-try:
-    # Configure multiple channels
-    for i, channel in enumerate(["AIN0", "AIN1"]):
-        daq.configure_voltage_input(
-            physical_channel=channel,
-            alias=f"ch_{i}",
-            range_min=0,
-            range_max=5
-        )
-
-    # Read 5 times with 1 second between reads
-    for i in range(5):
-        measurement = daq.read_analog()
-        print(measurement)
-        time.sleep(1)  # Software sleep until time for next sample
-
-except Exception as e:
-    print(f"Exception: {e}")
-finally:
-    daq.close()
-```
-
-### Example 2: Hardware-Timed Continuous Acquisition
-
-```python
-import time
-from instro.daq.drivers.labjack import LabJackTSeriesDriver
-from instro.daq import InstroDAQ
-from instro.lib.publishers import NominalCorePublisher
-
-DATASET_RID = "ri.catalog.main.dataset.<your-dataset-rid>"
-
-daq = InstroDAQ(
-    name="myDAQ",
-    driver=LabJackTSeriesDriver(device_id="440020473"),
-    dataset_rid=DATASET_RID,
-)
-
-daq.open()
-
-# Configure channel
-daq.configure_voltage_input(
-    physical_channel="AIN0",
-    alias="ch_1",
-    range_min=0,
-    range_max=5
-)
-
-# Configure hardware timing for 100 Hz acquisition
-daq.configure_ai_hw_sample_rate(
-    sample_rate=100,
-    samples_per_channel=10
-)
-
-# Start background acquisition
-daq.start()
-
-# Let it run until interrupted
-while True:
-    try:
-        time.sleep(1)
-    except KeyboardInterrupt:
-        print("Exiting main loop")
-        break
-
-daq.stop()
-daq.close()
-```
+More examples found in [Examples](/examples/daq/index)
 
 ## Deprecated methods
 
