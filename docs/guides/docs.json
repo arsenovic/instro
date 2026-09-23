@@ -62,7 +62,7 @@
         "tab": "Examples",
         "groups": [
           {
-            "group": "Contents",
+            "group": "Stable",
             "pages": [
               "examples",
               "examples/daq/index",
@@ -75,8 +75,14 @@
               "examples/ethernetip/index",
               "examples/test_rack_example/index",
               "examples/custom/index",
-              "examples/scope/index",
-              "examples/unstable/index"
+              "examples/scope/index"
+            ]
+          },
+          {
+            "group": "Additional packages",
+            "pages": [
+              "examples/unstable/index",
+              "examples/contrib/index"
             ]
           }
         ]
