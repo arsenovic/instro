@@ -53,7 +53,7 @@ A whole new `InstroX` category. Touches `docs.json` and several shared pages, no
 ## Terminology
 
 - Refer to the library as **`instro`** (the package name). Reserve *Nominal* for the platform it integrates with (Nominal Core, Nominal Connect, the Nominal publishers).
-- The instrument HALs are **`InstroPSU`**, **`InstroELoad`**, **`InstroDMM`**, **`InstroDAQ`**, **`InstroFlowController`**, **`I2CInterface`**: keep the casing.
+- The instrument HALs are **`InstroScope`**, **`InstroPSU`**, **`InstroDMM`**, **`InstroDAQ`**, **`InstroAWG`**, **`InstroELoad`**, **`InstroFlowController`**, **`I2CInterface`**: keep the casing.
 - A *channel* is a named signal for a series of measurements or computed values. The inline glossary tooltip is in `snippets/glossary/channel.mdx`.
 
 ## Style preferences
