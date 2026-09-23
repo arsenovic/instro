@@ -69,6 +69,7 @@
               "examples/dmm/index",
               "examples/psu/index",
               "examples/eload/index",
+              "examples/awg/index",
               "examples/i2c/index",
               "examples/publishers/index",
               "examples/modbus/index",

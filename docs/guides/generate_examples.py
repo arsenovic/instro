@@ -38,6 +38,7 @@ CATEGORY_TITLES: "OrderedDict[str, str]" = OrderedDict(
         ("dmm", "DMM"),
         ("psu", "PSU"),
         ("eload", "Electronic Load"),
+        ("awg", "AWG"),
         ("i2c", "I2C"),
         ("publishers", "Publishers"),
         ("modbus", "Modbus"),
