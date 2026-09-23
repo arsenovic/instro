@@ -1,3 +1,19 @@
+"""Check that the generated Mintlify example pages and Examples tab nav are up to date.
+
+Runs ``generate_examples.main`` into a temporary directory and compares the
+result against the committed ``docs/guides/examples/`` tree. It reports:
+
+- generated pages that are missing from the repo, differ from it, or exist in
+  the repo but are no longer generated (fix with ``just gen-examples``);
+- generated ``index.mdx`` pages that aren't listed in ``docs.json``'s Examples
+  tab, and Examples tab entries with no page behind them (fix by editing
+  ``docs.json``).
+
+Exits non-zero if anything is reported. This is what docs CI runs.
+
+Run via ``just check-examples``.
+"""
+
 import json
 import sys
 import tempfile
