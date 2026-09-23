@@ -76,9 +76,7 @@
               "examples/test_rack_example/index",
               "examples/custom/index",
               "examples/scope/index",
-              "examples/vna/index",
-              "examples/unstable/flowcontroller/index",
-              "examples/unstable/motorcontroller/index"
+              "examples/unstable/index"
             ]
           }
         ]

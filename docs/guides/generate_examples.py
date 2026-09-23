@@ -5,15 +5,17 @@ matching ``.mdx`` page under ``docs/guides/examples/``, and writes one
 ``index.mdx`` per category folder listing links to that category's pages.
 
 Also walks ``examples/`` directories inside ``packages/instro-unstable/`` and
-emits pages under ``examples/unstable/``, each with a warning callout that the
-API is not stable.
+emits pages under ``examples/unstable/<submodule>/``, each with a warning
+callout that the API is not stable. All unstable examples share a single
+``examples/unstable/index.mdx``, with one heading per submodule, so a new
+unstable submodule needs no ``docs.json`` edit.
 
 Unlike earlier versions of this script, it does not touch ``docs.json``.
 ``docs.json``'s Examples tab has one static entry per category pointing at
 that category's ``index.mdx``; it doesn't change when individual example
 scripts are added, removed, or renamed, so there's nothing for this script to
 regenerate there. Adding or removing a whole category is the one case that
-still needs a manual ``docs.json`` edit.
+still needs a manual ``docs.json`` edit (for non-unstable categories).
 
 Run via ``just gen-examples``.
 """
@@ -41,6 +43,9 @@ CATEGORY_TITLES: "OrderedDict[str, str]" = OrderedDict(
         ("modbus", "Modbus"),
         ("ethernetip", "EtherNet/IP"),
         ("test_rack_example", "Test Rack"),
+        ("vna", "VNA"),
+        ("flowcontroller", "Flow Controller"),
+        ("motorcontroller", "Motor Controller"),
     ]
 )
 
@@ -85,6 +90,17 @@ def write_index(index_path: Path, title: str, entries: list[tuple[str, str]]) ->
     lines += [f"- [{entry_title}](/{nav_path})\n" for entry_title, nav_path in entries]
     index_path.parent.mkdir(parents=True, exist_ok=True)
     index_path.write_text("".join(lines))
+
+
+def write_unstable_index(index_path: Path, sections: "OrderedDict[str, list[tuple[str, str]]]") -> None:
+    """sections: submodule folder -> (page_title, nav_path) pairs, already in display order."""
+    lines = ['---\ntitle: "Unstable"\n---\n\n', _UNSTABLE_WARNING.replace("This example uses", "These examples use")]
+    for folder, entries in sections.items():
+        lines.append(f"## {category_title(folder)}\n\n")
+        lines += [f"- [{entry_title}](/{nav_path})\n" for entry_title, nav_path in entries]
+        lines.append("\n")
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_path.write_text("".join(lines).rstrip("\n") + "\n")
 
 
 def clean_output_dir(output_path: Path) -> None:
@@ -140,9 +156,9 @@ def main(output_path: Path) -> None:
         write_index(index_path, ROOT_CATEGORY_TITLE, root_entries)
         print(f"wrote {index_path.relative_to(SCRIPT_DIR)}")
 
-    for folder, entries in unstable_categories.items():
-        index_path = output_path / "unstable" / folder / "index.mdx"
-        write_index(index_path, f"{category_title(folder)} (Unstable)", entries)
+    if unstable_categories:
+        index_path = output_path / "unstable" / "index.mdx"
+        write_unstable_index(index_path, OrderedDict(sorted(unstable_categories.items())))
         print(f"wrote {index_path.relative_to(SCRIPT_DIR)}")
 
 
