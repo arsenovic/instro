@@ -1,8 +1,13 @@
+import json
+import sys
 import tempfile
 from pathlib import Path
 
 from generate_examples import EXAMPLES_OUT as REPO_EXAMPLES_DIR
+from generate_examples import SCRIPT_DIR
 from generate_examples import main as gen_examples_main
+
+DOCS_JSON = SCRIPT_DIR / "docs.json"
 
 
 def read_text_universal(path: Path) -> str:
@@ -11,7 +16,43 @@ def read_text_universal(path: Path) -> str:
         return f.read()
 
 
-def check_examples(output_directory: Path) -> None:
+def examples_tab_pages() -> set[str]:
+    """Every page path listed under docs.json's Examples tab, including nested groups."""
+    tabs = json.loads(DOCS_JSON.read_text())["navigation"]["tabs"]
+    examples_tab = next(tab for tab in tabs if tab["tab"] == "Examples")
+    pages: set[str] = set()
+
+    def walk(node: object) -> None:
+        if isinstance(node, str):
+            pages.add(node)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+        elif isinstance(node, dict):
+            walk(node.get("groups", []))
+            walk(node.get("pages", []))
+
+    walk(examples_tab)
+    return pages
+
+
+def check_nav(output_directory: Path) -> list[str]:
+    """Generated index pages must be in the Examples tab, and every tab entry must resolve to a page."""
+    errors = []
+    pages = examples_tab_pages()
+    for index in sorted(output_directory.rglob("index.mdx")):
+        nav_path = f"examples/{index.relative_to(output_directory).with_suffix('').as_posix()}"
+        if nav_path not in pages:
+            errors.append(f"Generated index missing from docs.json Examples tab: {nav_path}")
+    for page in sorted(pages):
+        rel = Path(page).relative_to("examples") if page != "examples" else None
+        generated = rel is not None and (output_directory / rel).with_suffix(".mdx").exists()
+        if not generated and not (SCRIPT_DIR / page).with_suffix(".mdx").exists():
+            errors.append(f"docs.json Examples tab entry has no page: {page}")
+    return errors
+
+
+def check_examples(output_directory: Path) -> bool:
     gen_examples_main(output_path=output_directory)
     errors = []
     checked_files = []
@@ -49,16 +90,20 @@ def check_examples(output_directory: Path) -> None:
         if not generated_file.exists():
             errors.append(f"Expected generated file missing: {rel_path}")
 
+    errors += check_nav(output_directory)
+
     # Report all errors
     for error in errors:
         print(f"ERROR: {error}")
 
     print(f"Checked {len(checked_files)} example files against the repository working directory")
     if errors:
-        print(f"\n{len(errors)} file(s) differ from generated output — run 'just fix' or `just gen-examples`")
+        print(f"\n{len(errors)} problem(s) found — run `just gen-examples` and check docs.json's Examples tab")
+    return not errors
 
 
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as temp_dir:
         TEMP_EXAMPLE_DIRECTORY = Path(temp_dir)
-        check_examples(TEMP_EXAMPLE_DIRECTORY)
+        if not check_examples(TEMP_EXAMPLE_DIRECTORY):
+            sys.exit(1)

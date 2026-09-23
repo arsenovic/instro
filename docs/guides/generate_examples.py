@@ -153,7 +153,7 @@ def main(output_path: Path) -> None:
         nav_path = f"examples/{rel.with_suffix('').as_posix()}"
         out_path = (output_path / rel).with_suffix(".mdx")
         write_mdx(py_path, out_path)
-        print(f"wrote {out_path.relative_to(SCRIPT_DIR)}")
+        print(f"wrote {out_path.relative_to(output_path.parent)}")
 
         title = extract_title(py_path)
         if len(rel.parts) == 1:
@@ -164,12 +164,12 @@ def main(output_path: Path) -> None:
     for folder, entries in categories.items():
         index_path = output_path / folder / "index.mdx"
         write_index(index_path, category_title(folder), entries)
-        print(f"wrote {index_path.relative_to(SCRIPT_DIR)}")
+        print(f"wrote {index_path.relative_to(output_path.parent)}")
 
     if root_entries:
         index_path = output_path / ROOT_CATEGORY / "index.mdx"
         write_index(index_path, ROOT_CATEGORY_TITLE, root_entries)
-        print(f"wrote {index_path.relative_to(SCRIPT_DIR)}")
+        print(f"wrote {index_path.relative_to(output_path.parent)}")
 
     for package in EXAMPLE_PACKAGES:
         sections: "OrderedDict[str, list[tuple[str, str]]]" = OrderedDict()
@@ -178,13 +178,13 @@ def main(output_path: Path) -> None:
             nav_path = f"examples/{package.slug}/{submodule}/{py_path.stem}"
             out_path = output_path / package.slug / submodule / py_path.with_suffix(".mdx").name
             write_mdx(py_path, out_path, callout=package.callout.format(subject="This example uses"))
-            print(f"wrote {out_path.relative_to(SCRIPT_DIR)}")
+            print(f"wrote {out_path.relative_to(output_path.parent)}")
             sections.setdefault(submodule, []).append((extract_title(py_path), nav_path))
 
         # Always written so the static docs.json entry resolves even before the package has examples.
         index_path = output_path / package.slug / "index.mdx"
         write_package_index(index_path, package, OrderedDict(sorted(sections.items())))
-        print(f"wrote {index_path.relative_to(SCRIPT_DIR)}")
+        print(f"wrote {index_path.relative_to(output_path.parent)}")
 
 
 if __name__ == "__main__":
