@@ -13,7 +13,7 @@ Using InstroSDR to capture IQ samples and spectrum summaries
 This Instrument category is new and is currently available only in the Unstable package. Its API is not settled and may change without notice between releases. See [Additional Packages](/installation.md#additional-packages).
 :::
 
-`InstroSDR` provides a unified interface for software defined radios. This class is initialized with a vendor-specific driver, and provides the vendor-agnostic API (`set_center_freq`, `set_sample_rate`, `set_gain`, `measure_iq`, `measure_spectrum`, …).
+{py:class}`~instro.unstable.sdr.InstroSDR` provides a unified interface for software defined radios. This class is initialized with a vendor-specific driver (a {py:class}`~instro.unstable.sdr.SDRDriverBase` subclass), and provides the vendor-agnostic API (`set_center_freq`, `set_sample_rate`, `set_gain`, `measure_iq`, `measure_spectrum`, …).
 
 ## Creating an InstroSDR
 
@@ -26,12 +26,7 @@ sdr = InstroSDR(
 )
 ```
 
-| Parameter | Type | Description |
-|---|---|---|
-| `name` | `str` | Channel-name prefix for published data |
-| `driver` | `SDRDriverBase` | Concrete vendor driver |
-| `publishers` | `list[Publisher]` | Optional; publishers receiving emitted data |
-| `**kwargs` | | Default tags; `dataset_rid=` attaches a `NominalCorePublisher` |
+Arguments, with types and defaults, are in the {py:class}`InstroSDR reference <instro.unstable.sdr.InstroSDR>`.
 
 ## Supported Vendors
 
@@ -211,26 +206,7 @@ So an SDR named `sdr` publishes `sdr.rx0.i`, `sdr.rx0.center_freq.cmd`, and so o
 
 ### Method reference
 
-| Method | Returns | Description |
-|---|---|---|
-| `open()` | `None` | Open the device |
-| `close()` | `None` | Close the device, stop the daemon, close publishers |
-| `set_center_freq(frequency_hz)` | `Command` | Tune the RF center frequency |
-| `get_center_freq()` | `Measurement` | Center frequency the device accepted |
-| `set_sample_rate(sample_rate_hz)` | `Command` | Set the IQ sample rate |
-| `get_sample_rate()` | `Measurement` | Sample rate the device accepted |
-| `set_gain(gain_db)` | `Command` | Set receive gain |
-| `get_gain()` | `Measurement` | Current gain |
-| `set_bandwidth(bandwidth_hz)` | `Command` | Set IF/filter bandwidth (`0` means auto) |
-| `get_bandwidth()` | `Measurement` | Current bandwidth |
-| `start(channels, background, n_samples, publish_spectrum)` | `None` | Begin continuous acquisition over a channel set |
-| `stop()` | `None` | Stop every running stream and the background daemon |
-| `measure_iq(n_samples, channels)` | `Measurement \| None` | One aligned IQ block as paired `.i`/`.q` channels |
-| `fetch_iq(n_samples, publish_spectrum)` | `Measurement \| None` | Next contiguous block; optionally publishes its spectrum too |
-| `get_backlog()` | `int` | Samples per channel waiting to be fetched |
-| `measure_spectrum(n_samples)` | `Measurement \| None` | Four scalar spectrum features |
-| `compute_psd(n_samples)` | `tuple[ndarray, ndarray] \| None` | `(frequencies_hz, power_db)`; publishes nothing |
-| `driver` | `SDRDriverBase` | The underlying driver |
+Every method, with its arguments, units, and return value, is in the {py:class}`InstroSDR reference <instro.unstable.sdr.InstroSDR>`.
 
 :::{note}
 Tuners quantize both frequency and sample rate, so the value a getter reports can differ from what was requested. Read back rather than assuming the request took effect exactly.

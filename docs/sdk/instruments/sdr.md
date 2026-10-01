@@ -17,6 +17,10 @@ This Instrument category is new and is currently available only in the Unstable 
    ~instro.unstable.sdr.SDRDriverBase
 ```
 
+## Vendor Drivers
+
+No vendor drivers ship yet. See [Custom Driver Development](/library/custom-instruments.md#software-defined-radio-sdr) to write one.
+
 ## Types & Configuration
 
 ```{eval-rst}

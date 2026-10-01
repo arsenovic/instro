@@ -34,7 +34,36 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, eq=False)
 class IQCapture:
-    """One time-aligned block of IQ samples across one or more channels of a signal path."""
+    """One time-aligned block of IQ samples across one or more channels of a signal path.
+
+    Every row shares one timebase, so a multi-channel capture is aligned by construction.
+
+    Attributes:
+        samples (numpy.ndarray): Complex IQ samples shaped ``(n_channels, n_samples)``. Always
+            two-dimensional, even for a single channel.
+        sample_period_ns (float): Time between samples, in nanoseconds, shared by every row.
+        channels (tuple[str, ...]): Channel each row of ``samples`` came from.
+        center_freq_hz (tuple[float, ...]): Frequency each channel was tuned to, in Hz.
+        t0_ns (int | None): Hardware timestamp of the first sample, in nanoseconds since the Unix
+            epoch. ``None`` when the device has no clock of its own, in which case
+            `InstroSDR` anchors the block to the host clock.
+        dropped_samples (int): Samples lost before this block because the stream could not keep up.
+
+    Raises:
+        ValueError: If ``samples`` is not two-dimensional, or its row count does not match
+            ``channels`` and ``center_freq_hz``.
+
+    Example:
+        ::
+
+            capture = IQCapture(
+                samples=np.zeros((1, 4096), dtype=np.complex128),
+                sample_period_ns=1e9 / 2.4e6,
+                channels=("0",),
+                center_freq_hz=(100e6,),
+            )
+            row = capture.samples_for("0")
+    """
 
     samples: np.ndarray
     sample_period_ns: float
@@ -56,19 +85,54 @@ class IQCapture:
 
     @property
     def overflow(self) -> bool:
-        """Whether any samples were dropped before this block."""
+        """Whether any samples were dropped before this block.
+
+        Returns:
+            bool: ``True`` when ``dropped_samples`` is greater than zero.
+        """
         return self.dropped_samples > 0
 
     def samples_for(self, channel: str) -> np.ndarray:
-        """Row of samples belonging to ``channel``."""
+        """Return the row of samples belonging to one channel.
+
+        Args:
+            channel (str): Channel to read.
+
+        Returns:
+            numpy.ndarray: The channel's complex IQ samples, one-dimensional.
+
+        Raises:
+            ValueError: If the capture holds no such channel.
+        """
         return self.samples[self.channels.index(channel)]
 
     def center_freq_for(self, channel: str) -> float:
-        """Frequency ``channel`` was tuned to when these samples were taken."""
+        """Return the frequency a channel was tuned to when these samples were taken.
+
+        Args:
+            channel (str): Channel to read.
+
+        Returns:
+            float: Center frequency in Hz.
+
+        Raises:
+            ValueError: If the capture holds no such channel.
+        """
         return self.center_freq_hz[self.channels.index(channel)]
 
     def select(self, channels: Sequence[str]) -> "IQCapture":
-        """Narrow this capture to ``channels``, keeping the shared timebase."""
+        """Narrow this capture to a subset of its channels, keeping the shared timebase.
+
+        Args:
+            channels (Sequence[str]): Channels to keep, in the order the rows should appear.
+
+        Returns:
+            IQCapture: A capture holding only ``channels``, or this capture unchanged if they
+            already match.
+
+        Raises:
+            ValueError: If any of ``channels`` is not in the capture.
+        """
         wanted = tuple(channels)
         if wanted == self.channels:
             return self
@@ -87,7 +151,46 @@ class IQCapture:
 
 
 class SDRDriverBase(abc.ABC):
-    """Vendor SDR driver contract."""
+    """Contract every vendor SDR driver implements.
+
+    Abstract methods cover what every radio can do: open, tune, set a rate, and return samples.
+    The rest raise `NotImplementedError` by default, and a driver overrides only those its
+    hardware supports. A driver owns its own transport and holds no reference back to
+    `InstroSDR`.
+
+    Configuration methods take keyword-only ``direction`` and ``channel``, defaulting to the
+    first receive path. Acquisition (`read_iq`, `fetch_iq`, `get_backlog`) is receive-only.
+
+    Example:
+        A receive-only, single-channel driver over a vendor SDK::
+
+            class MyVendorSDR(SDRDriverBase):
+                def __init__(self, device_index: int = 0):
+                    self._device_index = device_index
+                    self._device = None
+
+                def open(self) -> None:
+                    from vendor_sdk import Radio  # keeps the SDK optional at import time
+
+                    self._device = Radio(self._device_index)
+
+                def close(self) -> None:
+                    self._device.close()
+
+                def set_center_freq(self, frequency_hz, *, direction=Direction.RX, channel="0"):
+                    self._device.center_freq = frequency_hz
+
+                ...  # get_center_freq, set_sample_rate, get_sample_rate
+
+                def read_iq(self, n_samples, *, channels=("0",)) -> IQCapture:
+                    samples = np.asarray(self._device.read_samples(n_samples), dtype=np.complex128)
+                    return IQCapture(
+                        samples=samples.reshape(1, -1),
+                        sample_period_ns=1e9 / self._device.sample_rate,
+                        channels=("0",),
+                        center_freq_hz=(self._device.center_freq,),
+                    )
+    """
 
     # --- Required ---
 
@@ -101,115 +204,377 @@ class SDRDriverBase(abc.ABC):
 
     @abc.abstractmethod
     def set_center_freq(self, frequency_hz: float, *, direction: Direction = Direction.RX, channel: str = "0") -> None:
-        """Set the RF center frequency in Hz."""
+        """Tune the RF center frequency.
+
+        Args:
+            frequency_hz (float): Center frequency in Hz.
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+        """
 
     @abc.abstractmethod
     def get_center_freq(self, *, direction: Direction = Direction.RX, channel: str = "0") -> float:
-        """Get the RF center frequency in Hz."""
+        """Return the RF center frequency the radio is tuned to.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+
+        Returns:
+            float: Center frequency in Hz.
+        """
 
     @abc.abstractmethod
     def set_sample_rate(
         self, sample_rate_hz: float, *, direction: Direction = Direction.RX, channel: str = "0"
     ) -> None:
-        """Set the sample rate in samples per second."""
+        """Set the IQ sample rate.
+
+        Args:
+            sample_rate_hz (float): Sample rate in samples per second.
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+        """
 
     @abc.abstractmethod
     def get_sample_rate(self, *, direction: Direction = Direction.RX, channel: str = "0") -> float:
-        """Get the sample rate in samples per second."""
+        """Return the IQ sample rate the radio accepted.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+
+        Returns:
+            float: Sample rate in samples per second.
+        """
 
     @abc.abstractmethod
     def read_iq(self, n_samples: int, *, channels: Sequence[str] = ("0",)) -> IQCapture:
-        """Read one time-aligned receive block across ``channels``, with the timebase it was taken on."""
+        """Read one time-aligned receive block, with the timebase it was taken on.
+
+        ``sample_period_ns`` on the result must describe the block returned, not the rate last
+        requested: `InstroSDR` derives every IQ timestamp from it.
+
+        Args:
+            n_samples (int): Samples to read per channel.
+            channels (Sequence[str]): Receive channels to read, e.g. ``("0",)``.
+
+        Returns:
+            IQCapture: One row per channel in ``channels``.
+        """
 
     # --- Optional: gain ---
 
     def set_gain(self, gain_db: float, *, direction: Direction = Direction.RX, channel: str = "0") -> None:
-        """Set the overall gain in dB. Override if the radio exposes a single gain figure."""
+        """Set the overall gain.
+
+        Override where the radio exposes a single gain figure.
+
+        Args:
+            gain_db (float): Gain in dB.
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+
+        Raises:
+            NotImplementedError: If the driver does not support gain control.
+        """
         raise NotImplementedError("Gain control has not been implemented for this driver")
 
     def get_gain(self, *, direction: Direction = Direction.RX, channel: str = "0") -> float:
-        """Get the overall gain in dB."""
+        """Return the overall gain.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+
+        Returns:
+            float: Gain in dB.
+
+        Raises:
+            NotImplementedError: If the driver does not support gain control.
+        """
         raise NotImplementedError("Gain control has not been implemented for this driver")
 
     def set_gain_mode(self, automatic: bool, *, direction: Direction = Direction.RX, channel: str = "0") -> None:
-        """Hand gain to the radio's AGC (``True``) or take manual control (``False``)."""
+        """Hand gain to the radio's automatic gain control, or take manual control.
+
+        Args:
+            automatic (bool): ``True`` for AGC, ``False`` for manual gain.
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+
+        Raises:
+            NotImplementedError: If the driver does not support a gain mode.
+        """
         raise NotImplementedError("Gain mode has not been implemented for this driver")
 
     def get_gain_mode(self, *, direction: Direction = Direction.RX, channel: str = "0") -> bool:
-        """Report whether the AGC is in control. Many radios cannot read this back."""
+        """Report whether automatic gain control is in control.
+
+        Many radios cannot read this back.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+
+        Returns:
+            bool: ``True`` when AGC is in control.
+
+        Raises:
+            NotImplementedError: If the driver does not support gain mode readback.
+        """
         raise NotImplementedError("Gain mode readback has not been implemented for this driver")
 
     def get_gain_range(self, *, direction: Direction = Direction.RX, channel: str = "0") -> tuple[float, float]:
-        """Lowest and highest settable gain in dB."""
+        """Return the lowest and highest settable gain.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+
+        Returns:
+            tuple[float, float]: ``(low, high)`` in dB.
+
+        Raises:
+            NotImplementedError: If the driver does not support reporting a gain range.
+        """
         raise NotImplementedError("Gain range has not been implemented for this driver")
 
     # --- Optional: front end ---
 
     def set_bandwidth(self, bandwidth_hz: float, *, direction: Direction = Direction.RX, channel: str = "0") -> None:
-        """Set the IF or filter bandwidth in Hz. Some radios tie this to the sample rate."""
+        """Set the IF or filter bandwidth.
+
+        Some radios tie this to the sample rate.
+
+        Args:
+            bandwidth_hz (float): Bandwidth in Hz.
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+
+        Raises:
+            NotImplementedError: If the driver does not support bandwidth control.
+        """
         raise NotImplementedError("Bandwidth control has not been implemented for this driver")
 
     def get_bandwidth(self, *, direction: Direction = Direction.RX, channel: str = "0") -> float:
-        """Get the IF or filter bandwidth in Hz."""
+        """Return the IF or filter bandwidth.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+
+        Returns:
+            float: Bandwidth in Hz.
+
+        Raises:
+            NotImplementedError: If the driver does not support bandwidth control.
+        """
         raise NotImplementedError("Bandwidth control has not been implemented for this driver")
 
     def set_freq_correction(self, ppm: float, *, direction: Direction = Direction.RX, channel: str = "0") -> None:
-        """Correct the reference oscillator error in parts per million."""
+        """Correct the reference oscillator's frequency error.
+
+        Args:
+            ppm (float): Correction in parts per million.
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+
+        Raises:
+            NotImplementedError: If the driver does not support frequency correction.
+        """
         raise NotImplementedError("Frequency correction has not been implemented for this driver")
 
     def get_freq_correction(self, *, direction: Direction = Direction.RX, channel: str = "0") -> float:
-        """Get the reference oscillator correction in parts per million."""
+        """Return the reference oscillator correction.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+
+        Returns:
+            float: Correction in parts per million.
+
+        Raises:
+            NotImplementedError: If the driver does not support frequency correction.
+        """
         raise NotImplementedError("Frequency correction has not been implemented for this driver")
 
     def list_antennas(self, *, direction: Direction = Direction.RX, channel: str = "0") -> list[str]:
-        """Names of the selectable antenna ports."""
+        """List the selectable antenna ports.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+
+        Returns:
+            list[str]: Antenna port names.
+
+        Raises:
+            NotImplementedError: If the driver does not support antenna selection.
+        """
         raise NotImplementedError("Antenna selection has not been implemented for this driver")
 
     def set_antenna(self, antenna: str, *, direction: Direction = Direction.RX, channel: str = "0") -> None:
-        """Select an antenna port by name."""
+        """Select an antenna port.
+
+        Args:
+            antenna (str): Port name, one of `list_antennas`.
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+
+        Raises:
+            NotImplementedError: If the driver does not support antenna selection.
+        """
         raise NotImplementedError("Antenna selection has not been implemented for this driver")
 
     def get_antenna(self, *, direction: Direction = Direction.RX, channel: str = "0") -> str:
-        """Name of the selected antenna port."""
+        """Return the selected antenna port.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+
+        Returns:
+            str: Port name.
+
+        Raises:
+            NotImplementedError: If the driver does not support antenna selection.
+        """
         raise NotImplementedError("Antenna selection has not been implemented for this driver")
 
     # --- Optional: streaming ---
 
     def start(self, *, direction: Direction = Direction.RX, channels: Sequence[str] = ("0",)) -> None:
-        """Begin continuous acquisition; one stream covers one direction and the whole channel set."""
+        """Begin continuous acquisition.
+
+        One stream covers one direction and its whole channel set, chosen here.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channels (Sequence[str]): Channels the stream covers.
+
+        Raises:
+            NotImplementedError: If the driver does not support streaming.
+        """
         raise NotImplementedError("Streaming has not been implemented for this driver")
 
     def stop(self, *, direction: Direction = Direction.RX) -> None:
-        """End this direction's stream and release its buffers."""
+        """End a direction's stream and release its buffers.
+
+        Args:
+            direction (Direction): Stream to end.
+
+        Raises:
+            NotImplementedError: If the driver does not support streaming.
+        """
         raise NotImplementedError("Streaming has not been implemented for this driver")
 
     def fetch_iq(self, n_samples: int) -> IQCapture:
-        """Block until ``n_samples`` are available; raise ``ValueError`` if more than the buffer holds."""
+        """Return the next contiguous block from the receive stream, blocking until it is available.
+
+        Args:
+            n_samples (int): Samples to return per channel.
+
+        Returns:
+            IQCapture: One row per channel the stream covers.
+
+        Raises:
+            ValueError: If ``n_samples`` exceeds what the stream can buffer.
+            NotImplementedError: If the driver does not support streaming.
+        """
         raise NotImplementedError("Streaming has not been implemented for this driver")
 
     def get_backlog(self) -> int:
-        """Samples per channel already captured and waiting to be fetched from the receive stream."""
+        """Return how many samples are waiting to be fetched from the receive stream.
+
+        Returns:
+            int: Samples per channel.
+
+        Raises:
+            NotImplementedError: If the driver does not support streaming.
+        """
         raise NotImplementedError("Streaming has not been implemented for this driver")
 
     # --- Optional: capability discovery ---
 
     def get_num_channels(self, *, direction: Direction = Direction.RX) -> int:
-        """Number of signal paths in ``direction``. Zero means the radio cannot do it at all."""
+        """Return the number of signal paths in a direction.
+
+        Args:
+            direction (Direction): Direction to count.
+
+        Returns:
+            int: Signal paths. ``0`` means the radio cannot use that direction at all.
+
+        Raises:
+            NotImplementedError: If the driver does not support reporting channel counts.
+        """
         raise NotImplementedError("Channel counts have not been implemented for this driver")
 
     def get_frequency_range(self, *, direction: Direction = Direction.RX, channel: str = "0") -> tuple[float, float]:
-        """Lowest and highest tunable center frequency in Hz."""
+        """Return the lowest and highest tunable center frequency.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+
+        Returns:
+            tuple[float, float]: ``(low, high)`` in Hz.
+
+        Raises:
+            NotImplementedError: If the driver does not support reporting a frequency range.
+        """
         raise NotImplementedError("Frequency range has not been implemented for this driver")
 
     def get_sample_rate_range(self, *, direction: Direction = Direction.RX, channel: str = "0") -> tuple[float, float]:
-        """Lowest and highest settable sample rate in samples per second."""
+        """Return the lowest and highest settable sample rate.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+
+        Returns:
+            tuple[float, float]: ``(low, high)`` in samples per second.
+
+        Raises:
+            NotImplementedError: If the driver does not support reporting a sample rate range.
+        """
         raise NotImplementedError("Sample rate range has not been implemented for this driver")
 
 
 class InstroSDR(Instrument):
-    """Higher-level SDR wrapper that publishes buffered IQ measurements."""
+    """Software defined radio instrument that publishes IQ blocks and spectrum features.
+
+    Each IQ block publishes as one `~instro.lib.types.Measurement` with paired ``.i`` and ``.q``
+    channels per signal path, timestamped from the sample period the device reports.
+    """
 
     def __init__(self, name: str, driver: SDRDriverBase, **kwargs: Any):
+        """Initialize an InstroSDR.
+
+        Args:
+            name (str): Channel-name prefix for published data.
+            driver (SDRDriverBase): Concrete vendor driver.
+            **kwargs: Passed to `~instro.lib.instrument.Instrument`: ``publishers`` and
+                ``background_config``, ``dataset_rid`` to attach a ``NominalCorePublisher``, and any
+                other keyword as a default tag.
+
+        Example:
+            ::
+
+                from instro.unstable.sdr import InstroSDR
+
+                sdr = InstroSDR(name="sdr", driver=MyVendorSDR(...))  # any concrete SDRDriverBase
+                sdr.open()
+                try:
+                    sdr.set_center_freq(100e6)
+                    sdr.set_sample_rate(2.4e6)
+                    iq = sdr.measure_iq(n_samples=4096)
+                    spectrum = sdr.measure_spectrum(n_samples=4096)
+                finally:
+                    sdr.close()
+        """
         super().__init__(name, **kwargs)
         self._driver = driver
         self._resource_lock = threading.RLock()
@@ -222,7 +587,10 @@ class InstroSDR(Instrument):
         self._driver.open()
 
     def close(self) -> None:
-        """Close the underlying driver and stop the daemon; the driver is released regardless."""
+        """Stop the background daemon and close the driver.
+
+        The driver is closed even if the daemon does not shut down cleanly; that failure is logged.
+        """
         try:
             super().close()
         except Exception:
@@ -231,7 +599,11 @@ class InstroSDR(Instrument):
 
     @property
     def driver(self) -> SDRDriverBase:
-        """Return the underlying hardware driver."""
+        """The underlying hardware driver.
+
+        Returns:
+            SDRDriverBase: The driver passed at construction.
+        """
         return self._driver
 
     def _iq_timestamps(self, capture: IQCapture, t_read_ns: int) -> list[int]:
@@ -313,7 +685,24 @@ class InstroSDR(Instrument):
     def measure_iq(
         self, n_samples: int = 1024, *, channels: Sequence[str] | None = None, **kwargs: Any
     ) -> Measurement | None:
-        """One time-aligned IQ block as paired ``.i``/``.q``, defaulting to the stream's channels."""
+        """Acquire one time-aligned IQ block and publish it as paired ``.i`` and ``.q`` channels.
+
+        While a receive stream runs, the block is taken from that stream rather than the device,
+        so it stays contiguous with the surrounding fetches and also publishes ``backlog`` and
+        ``overflow``.
+
+        Args:
+            n_samples (int): Samples per channel.
+            channels (Sequence[str] | None): Receive channels to read. ``None`` means every channel the
+                running stream covers, or ``("0",)`` with no stream running.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Measurement | None: The published block, or ``None`` if the read returned no samples.
+
+        Raises:
+            ValueError: If ``n_samples`` is not positive.
+        """
         block = self._read_iq_block(n_samples, channels)
         if block is None:
             return None
@@ -334,7 +723,19 @@ class InstroSDR(Instrument):
         n_samples: int = 1024,
         publish_spectrum: bool = False,
     ) -> None:
-        """Begin continuous acquisition; ``background`` hands the ``n_samples`` fetch loop to the daemon."""
+        """Begin continuous acquisition.
+
+        With ``background=True`` the daemon runs `fetch_iq` in a loop, which the blocking fetch
+        paces, so blocks publish without a loop of your own.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channels (Sequence[str]): Channels the stream covers.
+            background (bool): Hand the fetch loop to the background daemon.
+            n_samples (int): Samples per channel per block, when ``background`` is set.
+            publish_spectrum (bool): Also publish spectrum features for each block, when
+                ``background`` is set.
+        """
         with self._resource_lock:
             self._driver.start(direction=direction, channels=tuple(channels))
             self._streams[direction] = tuple(channels)
@@ -352,12 +753,26 @@ class InstroSDR(Instrument):
 
     @property
     def background_interval(self) -> float:
-        """Daemon loop period (s). Always 0 while streaming: the blocking fetch sets the pace."""
+        """Background daemon loop period.
+
+        ``start(background=True)`` sets it to ``0``: `fetch_iq` blocks until the radio has the
+        samples, so it paces the loop itself.
+
+        Returns:
+            float: Loop period in seconds.
+        """
         return self._background_config.interval
 
     @background_interval.setter
     def background_interval(self, seconds: float) -> None:
-        """Ignored -- fetch_iq blocks, so an interval would only add gaps between blocks."""
+        """Ignore the requested interval and log a warning.
+
+        An interval would only add gaps between blocks of an otherwise gapless stream. Change
+        ``n_samples`` in `start` instead.
+
+        Args:
+            seconds (float): Requested loop period in seconds. Ignored.
+        """
         logger.warning(
             "Ignoring background_interval=%s on SDR '%s': fetch_iq blocks until the radio has the "
             "samples, so it paces the daemon itself. Change n_samples in start() instead.",
@@ -366,7 +781,11 @@ class InstroSDR(Instrument):
         )
 
     def stop(self, **kwargs: Any) -> None:
-        """Stop the background daemon and every running hardware stream."""
+        """Stop the background daemon and every running hardware stream.
+
+        Args:
+            **kwargs: Ignored.
+        """
         super().stop()
         for direction in tuple(self._streams):
             with self._resource_lock:
@@ -391,7 +810,23 @@ class InstroSDR(Instrument):
 
     @publish_measurement
     def fetch_iq(self, n_samples: int = 1024, *, publish_spectrum: bool = False, **kwargs: Any) -> Measurement | None:
-        """Return the next contiguous block from the running stream, across every channel it covers."""
+        """Return the next contiguous block from the running stream and publish it.
+
+        Publishes the block as paired ``.i`` and ``.q`` channels for every channel the stream
+        covers, plus ``backlog`` and ``overflow`` stream-health channels.
+
+        Args:
+            n_samples (int): Samples per channel.
+            publish_spectrum (bool): Also publish spectrum features computed from this block,
+                without consuming another.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Measurement | None: The published block, or ``None`` if the fetch returned no samples.
+
+        Raises:
+            ValueError: If ``n_samples`` is not positive.
+        """
         if n_samples <= 0:
             raise ValueError(f"n_samples must be positive, got {n_samples}")
 
@@ -415,12 +850,26 @@ class InstroSDR(Instrument):
         )
 
     def get_backlog(self) -> int:
-        """Samples per channel waiting on the receive stream."""
+        """Return how many samples are waiting on the receive stream.
+
+        Returns:
+            int: Samples per channel.
+
+        Raises:
+            NotImplementedError: If the driver does not support streaming.
+        """
         with self._resource_lock:
             return self._driver.get_backlog()
 
     def is_streaming(self, *, direction: Direction = Direction.RX) -> bool:
-        """Whether a stream is running on ``direction``."""
+        """Report whether a stream is running.
+
+        Args:
+            direction (Direction): Direction to check.
+
+        Returns:
+            bool: ``True`` while a stream started through this instrument is running.
+        """
         return direction in self._streams
 
     @staticmethod
@@ -447,7 +896,22 @@ class InstroSDR(Instrument):
         return float(freqs[high] - freqs[low])
 
     def compute_psd(self, n_samples: int = 1024, *, channel: str = "0") -> tuple[np.ndarray, np.ndarray] | None:
-        """Acquire a block and return one channel's ``(frequencies_hz, power_db)``. Publishes nothing."""
+        """Acquire one block and return one channel's power spectral density. Publishes nothing.
+
+        Uses a Hann-windowed FFT. Frequencies are absolute, offset by the tuned center frequency.
+
+        Args:
+            n_samples (int): Samples to acquire, which sets the frequency resolution.
+            channel (str): Receive channel to analyze.
+
+        Returns:
+            tuple[numpy.ndarray, numpy.ndarray] | None: ``(frequencies_hz, power_db)``, frequencies in
+            Hz and power in dB relative to one squared sample unit per Hz. ``None`` if the read
+            returned no samples.
+
+        Raises:
+            ValueError: If ``n_samples`` is not positive.
+        """
         block = self._read_iq_block(n_samples, (channel,))
         if block is None:
             return None
@@ -458,7 +922,24 @@ class InstroSDR(Instrument):
     def measure_spectrum(
         self, n_samples: int = 1024, *, channels: Sequence[str] | None = None, **kwargs: Any
     ) -> Measurement | None:
-        """Publish scalar spectrum features per channel, defaulting to the stream's channels."""
+        """Acquire one block and publish four scalar spectrum features per channel.
+
+        Publishes ``spectrum.peak_power_db``, ``spectrum.peak_freq_hz`` (Hz),
+        ``spectrum.mean_power_db``, and ``spectrum.occupied_bw_hz`` (Hz, the band holding 99% of
+        total power). The spectrum array itself is not published; use `compute_psd` for it.
+
+        Args:
+            n_samples (int): Samples per channel.
+            channels (Sequence[str] | None): Receive channels to analyze. ``None`` means every channel
+                the running stream covers, or ``("0",)`` with no stream running.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Measurement | None: The published features, or ``None`` if the read returned no samples.
+
+        Raises:
+            ValueError: If ``n_samples`` is not positive.
+        """
         block = self._read_iq_block(n_samples, channels)
         if block is None:
             return None
@@ -533,65 +1014,170 @@ class InstroSDR(Instrument):
     def set_center_freq(
         self, frequency_hz: float, *, direction: Direction = Direction.RX, channel: str = "0", **kwargs: Any
     ) -> Command:
-        """Set RF center frequency and publish the command."""
+        """Set the RF center frequency and publish it as ``center_freq.cmd``.
+
+        Args:
+            frequency_hz (float): Center frequency in Hz.
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Command: The published command.
+        """
         return self._execute_command(
             self._driver.set_center_freq, float(frequency_hz), "center_freq", direction, channel, **kwargs
         )
 
     def get_center_freq(self, *, direction: Direction = Direction.RX, channel: str = "0", **kwargs: Any) -> Measurement:
-        """Query the current RF center frequency in Hz."""
+        """Query the RF center frequency and publish it as ``center_freq``.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Measurement: The published reading, in Hz.
+        """
         return self._execute_measurement(self._driver.get_center_freq, "center_freq", direction, channel, **kwargs)
 
     def set_sample_rate(
         self, sample_rate_hz: float, *, direction: Direction = Direction.RX, channel: str = "0", **kwargs: Any
     ) -> Command:
-        """Set the sample rate and publish the command."""
+        """Set the IQ sample rate and publish it as ``sample_rate.cmd``.
+
+        Args:
+            sample_rate_hz (float): Sample rate in samples per second.
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Command: The published command.
+        """
         return self._execute_command(
             self._driver.set_sample_rate, float(sample_rate_hz), "sample_rate", direction, channel, **kwargs
         )
 
     def get_sample_rate(self, *, direction: Direction = Direction.RX, channel: str = "0", **kwargs: Any) -> Measurement:
-        """Query the current sample rate in samples per second."""
+        """Query the IQ sample rate and publish it as ``sample_rate``.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Measurement: The published reading, in samples per second.
+        """
         return self._execute_measurement(self._driver.get_sample_rate, "sample_rate", direction, channel, **kwargs)
 
     def set_gain(
         self, gain_db: float, *, direction: Direction = Direction.RX, channel: str = "0", **kwargs: Any
     ) -> Command:
-        """Set the gain in dB and publish the command."""
+        """Set the gain and publish it as ``gain.cmd``.
+
+        Args:
+            gain_db (float): Gain in dB.
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Command: The published command.
+        """
         return self._execute_command(self._driver.set_gain, float(gain_db), "gain", direction, channel, **kwargs)
 
     def get_gain(self, *, direction: Direction = Direction.RX, channel: str = "0", **kwargs: Any) -> Measurement:
-        """Query the current gain in dB."""
+        """Query the gain and publish it as ``gain``.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Measurement: The published reading, in dB.
+        """
         return self._execute_measurement(self._driver.get_gain, "gain", direction, channel, **kwargs)
 
     def set_gain_mode(
         self, automatic: bool, *, direction: Direction = Direction.RX, channel: str = "0", **kwargs: Any
     ) -> Command:
-        """Hand gain to the radio's AGC or take manual control, and publish the command."""
+        """Hand gain to the AGC or take manual control, and publish it as ``gain_mode.cmd``.
+
+        Args:
+            automatic (bool): ``True`` for AGC, ``False`` for manual gain.
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Command: The published command.
+        """
         return self._execute_command(
             self._driver.set_gain_mode, bool(automatic), "gain_mode", direction, channel, **kwargs
         )
 
     def get_gain_mode(self, *, direction: Direction = Direction.RX, channel: str = "0", **kwargs: Any) -> Measurement:
-        """Query whether the AGC is in control."""
+        """Query the gain mode and publish it as ``gain_mode``.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Measurement: The published reading, ``True`` when AGC is in control.
+        """
         return self._execute_measurement(self._driver.get_gain_mode, "gain_mode", direction, channel, **kwargs)
 
     def set_bandwidth(
         self, bandwidth_hz: float, *, direction: Direction = Direction.RX, channel: str = "0", **kwargs: Any
     ) -> Command:
-        """Set the bandwidth in Hz and publish the command."""
+        """Set the IF or filter bandwidth and publish it as ``bandwidth.cmd``.
+
+        Args:
+            bandwidth_hz (float): Bandwidth in Hz.
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Command: The published command.
+        """
         return self._execute_command(
             self._driver.set_bandwidth, float(bandwidth_hz), "bandwidth", direction, channel, **kwargs
         )
 
     def get_bandwidth(self, *, direction: Direction = Direction.RX, channel: str = "0", **kwargs: Any) -> Measurement:
-        """Query the current IF or filter bandwidth in Hz."""
+        """Query the IF or filter bandwidth and publish it as ``bandwidth``.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Measurement: The published reading, in Hz.
+        """
         return self._execute_measurement(self._driver.get_bandwidth, "bandwidth", direction, channel, **kwargs)
 
     def set_freq_correction(
         self, ppm: float, *, direction: Direction = Direction.RX, channel: str = "0", **kwargs: Any
     ) -> Command:
-        """Set the reference oscillator correction in ppm and publish the command."""
+        """Set the reference oscillator correction and publish it as ``freq_correction.cmd``.
+
+        Args:
+            ppm (float): Correction in parts per million.
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Command: The published command.
+        """
         return self._execute_command(
             self._driver.set_freq_correction, float(ppm), "freq_correction", direction, channel, **kwargs
         )
@@ -599,7 +1185,16 @@ class InstroSDR(Instrument):
     def get_freq_correction(
         self, *, direction: Direction = Direction.RX, channel: str = "0", **kwargs: Any
     ) -> Measurement:
-        """Query the reference oscillator correction in ppm."""
+        """Query the reference oscillator correction and publish it as ``freq_correction``.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Measurement: The published reading, in parts per million.
+        """
         return self._execute_measurement(
             self._driver.get_freq_correction, "freq_correction", direction, channel, **kwargs
         )
@@ -607,9 +1202,28 @@ class InstroSDR(Instrument):
     def set_antenna(
         self, antenna: str, *, direction: Direction = Direction.RX, channel: str = "0", **kwargs: Any
     ) -> Command:
-        """Select an antenna port by name and publish the command."""
+        """Set the antenna port and publish it as ``antenna.cmd``.
+
+        Args:
+            antenna (str): Port name, one of the driver's `~SDRDriverBase.list_antennas`.
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Command: The published command.
+        """
         return self._execute_command(self._driver.set_antenna, antenna, "antenna", direction, channel, **kwargs)
 
     def get_antenna(self, *, direction: Direction = Direction.RX, channel: str = "0", **kwargs: Any) -> Measurement:
-        """Query the selected antenna port."""
+        """Query the selected antenna port and publish it as ``antenna``.
+
+        Args:
+            direction (Direction): Signal path, ``Direction.RX`` or ``Direction.TX``.
+            channel (str): Channel on that path, e.g. ``"0"``.
+            **kwargs: Tags added to the published value, on top of the instrument's default tags.
+
+        Returns:
+            Measurement: The published reading, the port name.
+        """
         return self._execute_measurement(self._driver.get_antenna, "antenna", direction, channel, **kwargs)
