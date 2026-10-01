@@ -13,17 +13,16 @@ Using InstroSDR to capture IQ samples and spectrum summaries
 This Instrument category is new and is currently available only in the Unstable package. Its API is not settled and may change without notice between releases. See [Additional Packages](/installation.md#additional-packages).
 :::
 
-`InstroSDR` provides a unified interface for software defined radios. This class is initialized with a vendor-specific driver (`RTLSDR`, …), and provides the vendor-agnostic API (`set_center_freq`, `set_sample_rate`, `set_gain`, `measure_iq`, `measure_spectrum`, …).
+`InstroSDR` provides a unified interface for software defined radios. This class is initialized with a vendor-specific driver, and provides the vendor-agnostic API (`set_center_freq`, `set_sample_rate`, `set_gain`, `measure_iq`, `measure_spectrum`, …).
 
 ## Creating an InstroSDR
 
 ```python
-from instro.unstable.sdr.drivers import RTLSDR
 from instro.unstable.sdr import InstroSDR
 
 sdr = InstroSDR(
-    name="rtl",
-    driver=RTLSDR(device_index=0),
+    name="sdr",
+    driver=MyVendorSDR(...),  # any concrete SDRDriverBase
 )
 ```
 
@@ -36,39 +35,7 @@ sdr = InstroSDR(
 
 ## Supported Vendors
 
-:::{driver-cards} sdr
-:::
-
-If your vendor or model is not listed, see [Custom Driver Development](/library/custom-instruments.md#software-defined-radio-sdr), or open a [Driver Request](https://github.com/nominal-io/instro/issues) issue on GitHub.
-
-## Example
-
-More examples found in [Examples](/examples/packages/unstable/index.md#sdr)
-
-```python
-import numpy as np
-
-from instro.unstable.sdr import InstroSDR
-from instro.unstable.sdr.drivers import RTLSDR
-
-sdr = InstroSDR(name="rtl", driver=RTLSDR(device_index=0))
-sdr.open()
-try:
-    sdr.set_center_freq(89.7e6)
-    sdr.set_sample_rate(2.4e6)
-    sdr.set_gain(30.0)
-
-    print(f"tuned to {sdr.get_center_freq().latest / 1e6:.4f} MHz")
-
-    iq = sdr.measure_iq(n_samples=262144)
-    z = np.asarray(iq.channel_data["rtl.rx0.i"]) + 1j * np.asarray(iq.channel_data["rtl.rx0.q"])
-    print(f"mean power {10 * np.log10(np.mean(np.abs(z) ** 2)):.1f} dB")
-
-    spectrum = sdr.measure_spectrum(n_samples=262144)
-    print(spectrum.channel_data["rtl.rx0.spectrum.peak_freq_hz"][0])
-finally:
-    sdr.close()
-```
+No vendor drivers ship in this release yet. To use a radio now, see [Custom Driver Development](/library/custom-instruments.md#software-defined-radio-sdr), or open a [Driver Request](https://github.com/nominal-io/instro/issues) issue on GitHub.
 
 ## Details
 
@@ -79,10 +46,10 @@ The following presents details about the `InstroSDR`. Specific driver details ca
 An `InstroSDR` is built from a concrete driver:
 
 ```python
-InstroSDR("name", driver=RTLSDR(device_index=0))
+InstroSDR("name", driver=MyVendorSDR(...))
 ```
 
-- The **vendor driver** (e.g. `RTLSDR`) owns the connection setup and the vendor SDK.
+- The **vendor driver** owns the connection setup and the vendor SDK.
 - **`InstroSDR`** owns the category-level workflow: IQ and spectrum measurements, commands, publishers, the background daemon.
 
 ### Lifecycle
@@ -90,7 +57,7 @@ InstroSDR("name", driver=RTLSDR(device_index=0))
 The driver captures connection settings on construction and takes the USB handle in `open()`. `close()` releases it, and a closed driver can be reopened:
 
 ```python
-sdr = InstroSDR("rtl", driver=RTLSDR(device_index=0))
+sdr = InstroSDR("sdr", driver=MyVendorSDR(...))
 sdr.open()
 try:
     ...
@@ -123,7 +90,7 @@ finally:
     sdr.stop()
 ```
 
-Consecutive fetches are contiguous. On an RTL-SDR at 2.4 MSa/s, successive blocks are exactly one sample period apart, so a stream can be concatenated into one unbroken signal.
+Consecutive fetches are contiguous. Successive blocks are exactly one sample period apart, so a stream can be concatenated into one unbroken signal.
 
 A stream covers **one direction and a set of channels**, chosen when it starts:
 
@@ -137,7 +104,7 @@ sdr.stop()
 
 ### One-shot reads during a stream
 
-While a stream is running, `measure_iq`, `measure_spectrum` and `compute_psd` are served from that stream rather than from the device. Reading the device directly would mean two concurrent reads on one handle, which `librtlsdr` does not support and which would quietly cost the stream the samples the one-shot read consumed.
+While a stream is running, `measure_iq`, `measure_spectrum` and `compute_psd` are served from that stream rather than from the device. Reading the device directly would mean two concurrent reads on one handle, which most vendor libraries do not support and which would quietly cost the stream the samples the one-shot read consumed.
 
 Consequences worth knowing:
 
@@ -186,7 +153,7 @@ Do not call `measure_spectrum` in a `fetch_iq` loop. While streaming it is serve
 `.i` is the real part and `.q` the imaginary part:
 
 ```python
-z = np.asarray(iq.channel_data["rtl.rx0.i"]) + 1j * np.asarray(iq.channel_data["rtl.rx0.q"])
+z = np.asarray(iq.channel_data["sdr.rx0.i"]) + 1j * np.asarray(iq.channel_data["sdr.rx0.q"])
 ```
 
 Swapping them conjugates the signal, which mirrors the spectrum about the center frequency.
@@ -234,7 +201,7 @@ Every measurement/command call produces a channel keyed under `{name}.{path}.{de
 | `fetch_iq()` | `i`, `q` | telemetry (one value per sample) |
 | `fetch_iq()` | `backlog`, `overflow` | telemetry |
 
-So an RTL-SDR named `rtl` publishes `rtl.rx0.i`, `rtl.rx0.center_freq.cmd`, and so on.
+So an SDR named `sdr` publishes `sdr.rx0.i`, `sdr.rx0.center_freq.cmd`, and so on.
 
 :::{note}
 `compute_psd()` returns `(frequencies_hz, power_db)` as numpy arrays directly and does not publish. Every other readback listed above publishes a `Measurement` on the descriptor shown.

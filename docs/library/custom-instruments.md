@@ -1445,7 +1445,7 @@ The two tiers are not symmetric by accident. Radios disagree about what "gain" e
 
 `center_freq_hz` is per channel because channels of one stream tune independently on a USRP or a Pluto. Reporting it from the same device snapshot as the samples is what lets the spectrum carry a real frequency axis; querying it separately would let a retune slip in between and mislabel the result. `samples_for(channel)` and `center_freq_for(channel)` read a single path out of a capture.
 
-Set `t0_ns` when the hardware timestamps its own samples (UHD's `TimeSpec`, NI-RFSA's `absolute_initial_x`). `InstroSDR` then places the block exactly where the device says. Leave it `None` and the host anchors the block instead, backstamping it to end when the read returned. An RTL-SDR has no such clock, so its driver leaves it unset.
+Set `t0_ns` when the hardware timestamps its own samples (UHD's `TimeSpec`, NI-RFSA's `absolute_initial_x`). `InstroSDR` then places the block exactly where the device says. Leave it `None` and the host anchors the block instead, backstamping it to end when the read returned. A radio with no clock of its own leaves it unset.
 
 ##### Direction and channel
 
@@ -1457,13 +1457,15 @@ Configuration readback on a transmit path is a different thing and remains usefu
 
 `channel` is a string rather than an index because the APIs this contract has to sit over disagree: SoapySDR uses integer indices, UHD names antennas (`"RX2"`), and NI-RFSA uses port strings with no indexing at all. A string spans all three.
 
-Drivers validate their own arguments. `RTLSDR` rejects anything but `rx` channel `"0"` rather than silently acting on the path it does have.
+Drivers validate their own arguments. A receive-only, single-path driver rejects anything but `rx` channel `"0"` rather than silently acting on the path it does have.
 
 :::{warning}
 `sample_period_ns` must describe the block being returned, not the rate last requested. A tuner quantizes what it was asked for, and `InstroSDR` derives every IQ timestamp from this field, so a nominal value mislabels the timebase of everything the driver produces.
 :::
 
-#### Implementation Example: RTLSDR
+#### Implementation Example
+
+A receive-only, single-channel radio whose vendor SDK reads in fixed-size USB blocks:
 
 ```python
 from typing import Any, ClassVar
@@ -1474,8 +1476,8 @@ from instro.unstable.sdr.sdr import IQCapture, SDRDriverBase
 from instro.unstable.sdr.types import Direction
 
 
-class RTLSDR(SDRDriverBase):
-    """RTL-SDR dongle. Connection params captured in ``__init__``; USB opens on ``open()``."""
+class MyVendorSDR(SDRDriverBase):
+    """Single-channel USB receiver. Connection params captured in ``__init__``; USB opens on ``open()``."""
 
     READ_GRANULARITY: ClassVar[int] = 256
 
@@ -1485,10 +1487,10 @@ class RTLSDR(SDRDriverBase):
         self._device: Any = None
 
     def open(self) -> None:
-        from rtlsdr import RtlSdr  # vendor SDK stays at the driver boundary
+        from vendor_sdk import Radio  # vendor SDK stays at the driver boundary
 
         if self._device is None:
-            self._device = RtlSdr(device_index=self._device_index, **self._kwargs)
+            self._device = Radio(device_index=self._device_index, **self._kwargs)
 
     def close(self) -> None:
         if self._device is not None:
@@ -1517,7 +1519,7 @@ class RTLSDR(SDRDriverBase):
 
     def _require_device(self) -> Any:
         if self._device is None:
-            raise RuntimeError("RTLSDR driver is not open; call open() first")
+            raise RuntimeError("MyVendorSDR driver is not open; call open() first")
         return self._device
 ```
 

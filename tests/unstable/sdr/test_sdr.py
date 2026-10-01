@@ -1,4 +1,4 @@
-"""Tests for the generic SDR contract and the RTL-SDR adapter."""
+"""Tests for the generic SDR contract."""
 
 from __future__ import annotations
 
