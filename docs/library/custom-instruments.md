@@ -202,7 +202,7 @@ def get_current_setpoint(self, channel: int) -> float:
     """Query and return the configured current-limit setpoint in amperes (not the measured output). Output may vary from actual measured current outside of constant current mode."""
 
 def get_operating_mode(self, channel: int) -> OperatingMode:
-    """Query whether `channel` is regulating in constant voltage, constant current, or off."""
+    """Query whether `channel` is regulating in constant voltage, constant current, unregulated, or off."""
 
 def set_overvoltage_protection_level(self, voltage: float, channel: int) -> None:
     """Set the overvoltage protection threshold (volts) on `channel`."""
@@ -233,6 +233,15 @@ def set_overcurrent_protection_enabled(self, enabled: bool, channel: int) -> Non
 
 def get_overcurrent_protection_enabled(self, channel: int) -> bool:
     """Query and return whether overcurrent protection is enabled."""
+
+def clear_protection(self, channel: int) -> None:
+    """Clear every latched protection trip on `channel`, leaving the output off."""
+
+def get_overvoltage_protection_tripped(self, channel: int) -> bool:
+    """Query and return whether overvoltage protection has tripped and not been cleared."""
+
+def get_overcurrent_protection_tripped(self, channel: int) -> bool:
+    """Query and return whether overcurrent protection has tripped and not been cleared."""
 
 def set_remote_sense_enabled(self, enabled: bool, channel: int) -> None:
     """Enable or disable remote sense on `channel`."""

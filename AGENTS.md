@@ -13,13 +13,12 @@ just test                        # all tests: python + Rust; no hardware require
 just check-python / check-rust   # single-language lints (check-rust uses nightly fmt + locked clippy)
 just test-python / test-rust     # single-language tests
 just build-docs / serve-docs     # docs site (docs/, Sphinx): strict build / live preview; needs the `docs` group, Python >=3.12
-just build-site                  # published layout: landing page at the root, docs under /python/
 uv build --wheel --package <name> # build a wheel for a workspace package
 ```
 
 `just check` and `just test` cover local linting and tests. [Build/test CI](./.github/workflows/build-check-test.yml) also checks `uv lock --check` and runs across supported OS/Python combinations. Separate workflows check [the docs build](./.github/workflows/docs-check.yml) (`just build-docs`, warnings as errors) and [PR titles](./.github/workflows/lint-pr-title.yml). A local pass does not guarantee a full CI pass. The [scheduled latest-dependencies workflow](./.github/workflows/latest-deps-test.yml) re-resolves dependencies and runs Python tests; it is not part of PR CI.
 
-The default `dev` group in [pyproject.toml](./pyproject.toml) includes the local maturin-built `instro-ethernetip` package, so fresh setup for Python checks/tests also needs Rust and a C/C++ compiler/linker. `just check` and `just test` additionally need CMake and LLVM/libclang for the OPC UA workspace crates. The [justfile](./justfile) uses a separate nightly rustfmt for `check-rust` and `fix-rust`; install it with `rustup toolchain install nightly --profile minimal --component rustfmt`. See [Prerequisites](./CONTRIBUTING.md#prerequisites) for per-OS setup.
+The default `dev` group in [pyproject.toml](./pyproject.toml) includes the local maturin-built `instro-ethernetip` package, so fresh setup for Python checks/tests also needs Rust and a C/C++ compiler/linker. `just check` and `just test` additionally need CMake and LLVM/libclang for the OPC UA workspace crates. The [justfile](./justfile) uses a separate nightly rustfmt for `check-rust` and `fix-rust`; install it with `rustup toolchain install nightly --profile minimal --component rustfmt`. `test-rust` runs Rust tests with [`cargo-nextest`](https://nexte.st/) (plus `cargo test --doc` for doctests, which nextest skips); install it with `cargo install cargo-nextest --locked` or a prebuilt binary. See [Prerequisites](./CONTRIBUTING.md#prerequisites) for per-OS setup.
 
 ## Codebase layout
 
@@ -64,7 +63,7 @@ Use `instro/psu/drivers/bk_9115.py` as the reference. The shape is:
 2. Compose `VisaDriver` (or another transport) in `__init__`: don't subclass it. Accept `str | VisaConfig` so callers can customize.
 3. Implement `open`, `close`, and the category-required methods.
 4. Add per-driver `_write_checked` / `_check_errors` helpers if the device supports `SYST:ERR?`. Do **not** extract these to a shared mixin (see Patterns below).
-5. Register in `instro/<category>/drivers/__init__.py` (both the import and `__all__`).
+5. Register in `instro/<category>/drivers/__init__.py` (both the import and `__all__`), and in `instro/<category>/config.py`'s `<CAT>_VENDOR_REGISTRY` as a `DriverEntry` carrying the driver's `*IDN?` `IdnPattern`(s). The registry is the single identity table: JSON config resolves `driver.name` through it and `instro discover` matches against its patterns, and `tests/lib/test_registry.py` fails for a non-simulated entry without a pattern. `tests/lib/test_registry.py` also runs `check_registry()` per category so a pattern's `num_channels` matches what the category's driver config requires or forbids.
 6. Add targeted tests following the category's existing layout. The mocked-transport reference is [tests/psu/bk/test_bk_9115_software.py](./tests/psu/bk/test_bk_9115_software.py): patch the driver's `VisaDriver` reference with `autospec=True` and assert wire-level commands. PSU driver tests live under `tests/psu/<vendor>/`; `tests/psu/test_psu_drivers.py` covers the base contract and HAL composition. Avoid redundant matrices, coverage-count padding, or shared helpers that obscure the behavior under test.
 
 ## How to add a community driver

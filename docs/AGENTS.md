@@ -6,7 +6,7 @@ Scope: `docs/`, one Sphinx site holding the guides (this folder) and the API ref
 
 - `just build-docs`: clean build into `_build/dirhtml`, warnings are errors. PR CI (`docs-check.yml`) runs it and uploads the site as a `docs-site` artifact; `deploy-docs.yml` publishes on merge.
 - `just serve-docs`: live preview on http://127.0.0.1:8000; rebuilds on page, example, and docstring edits.
-- `just build-site`: the published layout in `_build/site`, the landing page (`_landing/index.html`, plain HTML, not a Sphinx page) at the root and the docs under `/python/`. CI previews and the deploy use it. All links in the build are relative, so the docs work under any prefix.
+- The deploy publishes `_build/dirhtml` as is, at the root of `instro.nominal.io`. The same build also goes to the Nominal developer docs hub at `/python/instro/`, so keep every link relative (the build does): the docs must work under any prefix.
 - Toolchain: the `docs` dependency group (Python >=3.12).
 - URLs are folder-style (`/psu/`), so a finished build needs a server to browse: `python -m http.server -d docs/_build/dirhtml`.
 - Sidebar changes only reach unchanged pages on a clean build (`-E`, which `build-docs` does).
@@ -16,7 +16,7 @@ Scope: `docs/`, one Sphinx site holding the guides (this folder) and the API ref
 | Path | Contents |
 |---|---|
 | `conf.py`, `_ext/`, `_templates/`, `_static/` | Shared config, extensions, templates, CSS/JS, logos. |
-| `_landing/index.html` | The site root's landing page (language picker). Uses the docs' logo and favicon via `python/_static/`. |
+| `_extra/404.html` | Copied to the site root. Sends links from when the docs were under `/python/` to their new paths; otherwise a not-found page. |
 | `index.md` | Home page, and every sidebar group: one hidden `toctree` per caption, for all three sections. |
 | `quickstart.md`, `installation.md`, `cli.md`, `using-instro.md`, `instruments.md` | Overview pages. |
 | `<category>.md` | One guide per category (`psu`, `dmm`, `scope`, `daq`, `awg`, `eload`, `flowcontroller`, `sdr`). |
@@ -26,7 +26,8 @@ Scope: `docs/`, one Sphinx site holding the guides (this folder) and the API ref
 | `examples/` | Generated at build time by `_ext/examples.py` (gitignored). Never edit. |
 | `sdk/` | API reference: category pages, library modules, protocols, changelog. |
 
-- **Sections:** the header tabs (Guides, Examples, SDK) are sections; `_ext/sections.py` trims the sidebar to the current one by URL prefix (`sdk/`, `examples/`, else guides).
+- **Sections:** the header tabs (Guides, Examples, SDK) are sections; `nominal_sphinx_theme` trims the sidebar to the current one by the tab's folder (`sdk/`, `examples/`, else guides), from `nav_links` in `conf.py`.
+- **Theme:** styling comes from `nominal_sphinx_theme` (nominal-io/nominal-sphinx-theme); change it there, then `uv lock --upgrade-package nominal-sphinx-theme` here. Keep `_static/custom.css` to instro-only styles.
 - **Hidden pages:** pages outside the sidebar set `orphan: true` in front matter. Driver pages and protocol sub-pages are orphans.
 - **Page head:** `# Title`, then an optional `{.lead}` paragraph (grey subtitle), with `myst: html_meta: description:` in front matter for search engines.
 

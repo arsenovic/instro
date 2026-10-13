@@ -72,7 +72,7 @@ class PSUDriverBase(abc.ABC):
         raise NotImplementedError(f"get_current_setpoint is not implemented for {type(self).__name__}")
 
     def get_operating_mode(self, channel: int) -> OperatingMode:
-        """Query whether `channel` is regulating in constant voltage, constant current, or off."""
+        """Query whether `channel` is regulating in constant voltage, constant current, unregulated, or off."""
         raise NotImplementedError(f"get_operating_mode is not implemented for {type(self).__name__}")
 
     def set_overvoltage_protection_level(self, voltage: float, channel: int) -> None:
@@ -114,6 +114,18 @@ class PSUDriverBase(abc.ABC):
     def get_overcurrent_protection_enabled(self, channel: int) -> bool:
         """Query whether overcurrent protection is enabled on `channel`."""
         raise NotImplementedError(f"get_overcurrent_protection_enabled is not implemented for {type(self).__name__}")
+
+    def clear_protection(self, channel: int) -> None:
+        """Clear every latched protection trip on `channel`. The output stays off until re-enabled."""
+        raise NotImplementedError(f"clear_protection is not implemented for {type(self).__name__}")
+
+    def get_overvoltage_protection_tripped(self, channel: int) -> bool:
+        """Query whether overvoltage protection has tripped on `channel` and not been cleared."""
+        raise NotImplementedError(f"get_overvoltage_protection_tripped is not implemented for {type(self).__name__}")
+
+    def get_overcurrent_protection_tripped(self, channel: int) -> bool:
+        """Query whether overcurrent protection has tripped on `channel` and not been cleared."""
+        raise NotImplementedError(f"get_overcurrent_protection_tripped is not implemented for {type(self).__name__}")
 
     def set_remote_sense_enabled(self, enabled: bool, channel: int) -> None:
         """Enable or disable remote sense on `channel`."""
@@ -368,7 +380,7 @@ class InstroPSU(Instrument):
         )
 
     def get_operating_mode(self, channel: int, **kwargs) -> Measurement | None:
-        """Query whether ``channel`` is regulating in constant voltage, constant current, or off (published as a string)."""
+        """Query whether ``channel`` is regulating in constant voltage, constant current, unregulated, or off (published as a string)."""
         return self._execute_measurement(
             self._driver.get_operating_mode,
             channel=channel,
@@ -489,6 +501,48 @@ class InstroPSU(Instrument):
             channel=channel,
             channel_suffix="ocp.enabled",
             legacy_suffix="ocp_en",
+            **kwargs,
+        )
+
+    @publish_command
+    def clear_protection(self, channel: int, **kwargs) -> Command:
+        """Clear every latched protection trip on ``channel``. Publishes ``True`` on the ``protection.clear`` command channel.
+
+        The output stays off after the clear; re-enable it with `output_enable` once the cause is fixed.
+        """
+        with self._resource_lock:
+            self._driver.clear_protection(channel=channel)
+            timestamp = time.time_ns()
+
+        return self._package_command(
+            self._command_descriptor(channel, "protection.clear", "protection_clear"), True, timestamp, **kwargs
+        )
+
+    def get_overvoltage_protection_tripped(self, channel: int, **kwargs) -> Measurement | None:
+        """Query whether overvoltage protection has tripped on ``channel`` and not been cleared.
+
+        Raises ``NotImplementedError`` if the driver does not implement the query, or
+        ``FeatureNotSupportedError`` if the supply has no overvoltage protection.
+        """
+        return self._execute_measurement(
+            self._driver.get_overvoltage_protection_tripped,
+            channel=channel,
+            channel_suffix="ovp.tripped",
+            legacy_suffix="ovp_tripped",
+            **kwargs,
+        )
+
+    def get_overcurrent_protection_tripped(self, channel: int, **kwargs) -> Measurement | None:
+        """Query whether overcurrent protection has tripped on ``channel`` and not been cleared.
+
+        Raises ``NotImplementedError`` if the driver does not implement the query, or
+        ``FeatureNotSupportedError`` if the supply has no overcurrent protection.
+        """
+        return self._execute_measurement(
+            self._driver.get_overcurrent_protection_tripped,
+            channel=channel,
+            channel_suffix="ocp.tripped",
+            legacy_suffix="ocp_tripped",
             **kwargs,
         )
 

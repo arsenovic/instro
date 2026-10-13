@@ -35,7 +35,7 @@ test-python:
 
 # run Rust library, integration, and doc tests for the workspace
 test-rust:
-    cargo test --workspace --all-features --all-targets
+    cargo nextest run --workspace --all-features --all-targets
     cargo test --workspace --all-features --doc
 
 # run all python and Rust tests plus EtherNet/IP packaging checks
@@ -64,7 +64,7 @@ check-imports:
 # run all python static analysis checks
 check-python: check-format check-types check-imports
 
-# check Rust formatting, lints, and lockfile | fix formatting with `just fix-rust`
+# check Rust formatting, lints, and lockfile | fix with `just fix-rust`
 check-rust:
     cargo +nightly fmt --all --check
     cargo clippy --locked --all-features --all-targets --workspace -- -D warnings
@@ -83,8 +83,9 @@ fix-format:
 # fix python imports and formatting
 fix-python: fix-format fix-imports
 
-# fixes Rust code formatting (note: mutates the code)
+# fixes Rust lints and code formatting (note: mutates the code)
 fix-rust:
+    cargo clippy --fix --allow-dirty --allow-staged --all-targets --all-features --workspace
     cargo +nightly fmt --all
 
 # fix imports and formatting
@@ -114,17 +115,6 @@ _check-docs-python:
 # build the docs site (guides + API reference) into docs/_build/dirhtml; warnings fail the build
 build-docs: _check-docs-python
     uv run --group docs sphinx-build -E -W --keep-going -j auto -b dirhtml docs docs/_build/dirhtml
-
-# the published site, docs/_build/site: the landing page (docs/_landing) at the root, the docs under /python/
-build-site: build-docs
-    rm -rf docs/_build/site
-    mkdir -p docs/_build/site
-    cp -r docs/_landing/. docs/_build/site/
-    cp -r docs/_build/dirhtml docs/_build/site/python
-
-# build the published site and serve it on http://127.0.0.1:8000 (landing page at /, docs at /python/); no live rebuild
-serve-site: build-site
-    uv run python -m http.server 8000 --bind 127.0.0.1 -d docs/_build/site
 
 # live-preview the docs on http://127.0.0.1:8000, rebuilding on page, example, or docstring changes
 serve-docs: _check-docs-python
@@ -183,5 +173,5 @@ eip-wheel-smoke-test:
 
 # Full EIP test suite: wheel smoke test, Rust/Python bindings, and cpppo integration
 eip-test: eip-sdist-smoke-test eip-wheel-smoke-test
-    cargo test --all-features --all-targets -p instro-ethernetip
+    cargo nextest run --all-features --all-targets -p instro-ethernetip
     uv run --reinstall-package instro-ethernetip --with-editable . pytest tests/ethernetip/test_ethernetip_bindings.py -q

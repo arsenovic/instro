@@ -164,6 +164,7 @@ sdk/instruments/sdr
 sdk/library/instrument
 sdk/library/types
 sdk/library/config
+sdk/library/registry
 sdk/library/exceptions
 sdk/library/publishers
 sdk/library/discover
